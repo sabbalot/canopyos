@@ -1,0 +1,22 @@
+# Use the official Grafana image
+FROM grafana/grafana:12.0.1
+
+# Ensure the entrypoint script is executable and adjust permissions
+USER root
+
+# Copy provisioning configuration
+COPY provisioning /etc/grafana/provisioning
+
+# Copy the custom entrypoint script
+COPY init-scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
+# Ensure the entrypoint script is executable
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Change ownership using numeric UID and GID -> user not known at build time
+RUN chown -R 472:472 /etc/grafana/provisioning
+
+# Override the default entrypoint with the custom one
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+# Switch to root user so entrypoint can chown volume mounts
+USER root
+

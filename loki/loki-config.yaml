@@ -1,0 +1,71 @@
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  http_listen_address: 0.0.0.0
+
+common:
+  path_prefix: /tmp/loki
+  storage:
+    filesystem:
+      chunks_directory: /tmp/loki/chunks
+      rules_directory: /tmp/loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: "2023-01-05"
+      index:
+        period: 24h
+        prefix: index_
+      object_store: filesystem
+      schema: v13
+      store: tsdb
+
+storage_config:
+  tsdb_shipper:
+    active_index_directory: /tmp/loki/tsdb-index
+    cache_location: /tmp/loki/tsdb-cache
+    resync_interval: 5m
+  filesystem:
+    directory: /tmp/loki/chunks
+
+limits_config:
+  reject_old_samples: true
+  reject_old_samples_max_age: 48h 
+  retention_period: 2d
+
+compactor:
+  working_directory: /tmp/loki/compactor
+  compaction_interval: 10m
+  apply_retention_interval: 10m 
+  retention_enabled: true
+  retention_delete_delay: 2h
+  retention_delete_worker_count: 150
+  retention_table_timeout: 0s
+  delete_request_store: filesystem
+  delete_request_store_key_prefix: index/
+  delete_batch_size: 70
+  delete_request_cancel_period: 24h
+  delete_max_interval: 24h
+  max_compaction_parallelism: 1
+  upload_parallelism: 10
+  compactor_ring:
+    kvstore:
+      store: inmemory
+      prefix: collectors/
+    heartbeat_period: 15s
+    heartbeat_timeout: 1m
+    tokens_file_path: ""
+    zone_awareness_enabled: false
+    instance_id: "loki-instance-1"  
+    instance_interface_names: ["eth0"]
+    instance_port: 0
+    instance_addr: ""
+    instance_availability_zone: ""
+    instance_enable_ipv6: false
+  tables_to_compact: 0
+  skip_latest_n_tables: 0

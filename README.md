@@ -2,7 +2,6 @@
 
 **Transform consumer IoT devices into intelligent, enterprise-level growing systems with plug-and-play setup.**
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Docker Pulls](https://img.shields.io/docker/pulls/phyrron/grow-assistant-backend.svg)](https://hub.docker.com/r/phyrron/grow-assistant-backend)
 [![Docker Pulls](https://img.shields.io/docker/pulls/phyrron/grow-assistant-app.svg)](https://hub.docker.com/r/phyrron/grow-assistant-app)
 
@@ -109,8 +108,8 @@ docker compose up -d
 docker compose ps
 ```
 
-**For production deployments, consider:**
-- Manual Docker installation following [official docs](https://docs.docker.com/engine/install/)
+**For production docker deployments, consider:**
+- Manual Docker installation following [official docs](https://docs.docker.com/engine/install/ubuntu/)
 - Setting up external storage for data volumes
 
 ### Method 3: Development Setup
@@ -215,9 +214,8 @@ After installation, access the platform at:
 
 - **Main Application:** Port 80 (HTTP)
 - **Grafana Dashboard:** Port 3000 (HTTP)
-- **Backend API:** Port 8000 (localhost only)
+- **Grow Assistant API:** Port 8000 (localhost only)
 - **InfluxDB:** Port 8086 (localhost only)
-- **PostgreSQL:** Port 5432 (localhost only)
 
 ---
 
@@ -227,7 +225,7 @@ After installation, access the platform at:
 
 1. **Access the web interface** at `http://your-device-ip`
 2. **Complete initial setup** following the on-screen wizard
-3. **Configure MQTT settings** for your IoT devices
+3. **Start GrowAssistant MQTT Broker through Frontend** for your IoT devices
 4. **Add sensors and devices** through the device management interface
 5. **Set up automation rules** based on your growing needs
 6. **Access Grafana dashboards** at `http://your-device-ip:3000` (admin/generated-password)
@@ -252,11 +250,7 @@ GrowAssistant supports a wide range of IoT devices:
     "sensorID": "greenhouse_01"
 }
 
-// Topics
-growbox/temperature    # Temperature readings
-growbox/humidity      # Humidity readings  
-growbox/soil_moisture # Soil moisture readings
-growbox/control       # Device control commands
+ //See MQTT Topic Structure Documentation for more details on how to publish your HomeAssistant or custom build devices. 
 ```
 
 ---
@@ -310,33 +304,6 @@ docker compose up -d
 ```
 
 ---
-
-## 🔐 Security
-
-### Built-in Security Features
-
-- **Localhost-only database access** - Databases not exposed externally
-- **Secure secret generation** - Cryptographically secure passwords
-- **Docker socket protection** - Controlled container management
-- **Environment isolation** - Services run in isolated containers
-
-### Security Best Practices
-
-1. **Change default passwords** after installation
-2. **Use strong secrets** (automatically generated)
-3. **Keep system updated:**
-   ```bash
-   sudo apt update && sudo apt upgrade
-   docker compose pull && docker compose up -d
-   ```
-4. **Regular backups:**
-   ```bash
-   # Backup secrets and configuration
-   tar -czf growassistant-backup.tar.gz .secrets/ docker-compose.yml
-   ```
-
----
-
 ## 🔧 Advanced Configuration
 
 ### Custom Installation Directory
@@ -360,45 +327,6 @@ services:
           memory: 512M
         reservations:
           memory: 256M
-```
-
-### External Database
-
-To use external PostgreSQL or InfluxDB:
-
-```yaml
-# Remove internal database services
-# Update connection strings in environment variables
-environment:
-  - POSTGRES_HOST=your-external-db-host
-  - INFLUXDB_URL=http://your-external-influxdb:8086
-```
-
----
-
-## 📈 Performance Optimization
-
-### Raspberry Pi Optimization
-
-```bash
-# Increase GPU memory split
-echo "gpu_mem=128" | sudo tee -a /boot/config.txt
-
-# Enable cgroup memory
-echo "cgroup_enable=memory cgroup_memory=1" | sudo tee -a /boot/cmdline.txt
-
-# Reboot to apply changes
-sudo reboot
-```
-
-### Storage Optimization
-
-```bash
-# Use external storage for Docker
-sudo systemctl stop docker
-sudo mv /var/lib/docker /mnt/external-drive/
-sudo ln -s /mnt/external-drive/docker /var/lib/docker
-sudo systemctl start docker
 ```
 
 ---
@@ -446,35 +374,30 @@ docker compose up -d
 - **Documentation:** Comprehensive guides in the web interface
 - **Issues:** [GitHub Issues](https://github.com/sabbalot/grow-assistant/issues)
 - **Discussions:** [GitHub Discussions](https://github.com/sabbalot/grow-assistant/discussions)
+- **Discord**: [GrowAssistant Discord](https://discord.gg/m7KAwWpq)
 
 ### Contributing
 
 - **Bug Reports:** Use GitHub Issues with detailed information
-- **Feature Requests:** Propose new features via GitHub Discussions
+- **Feature Requests:** Propose new features via GitHub Discussions or on Discord
 - **Documentation:** Help improve our guides and tutorials
 
 ---
 
-## 📄 License
+### Deployment Configuration (This Repository)
 
-This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
-
-**What this means:**
-- ✅ **Free to use** for personal, research, and open source projects
-- ✅ **Modify and distribute** as long as you share modifications
-- ✅ **Commercial use** allowed if you comply with AGPL terms
-- ❌ **Proprietary SaaS** requires commercial license
-
-For commercial licensing inquiries, please contact: [seberhar@proton.me]
+- **Docker Compose files**: Free to use, modify, and share
+- **Documentation**: Free to use and improve
+- **Setup scripts**: Free to adapt for your needs
+- **No warranty**: Provided "as-is" for convenience
 
 ---
 
-## 🙏 Acknowledgments
-
-Built with love for the growing community. Special thanks to all contributors and the open-source projects that make this possible.
-
-**Powered by:** Docker, PostgreSQL, InfluxDB, Svelte, FastAPI, and many other amazing open-source projects.
-
----
+### Third-Party Components
+| Component | License | Source |
+|-----------|---------|---------|
+| **Grafana Stack** | AGPL-3.0 | https://github.com/grafana |
+| **InfluxDB** | MIT | https://github.com/influxdata |
+| **PostgreSQL** | PostgreSQL License | https://postgresql.org |
 
 *Happy Growing! 🌱*

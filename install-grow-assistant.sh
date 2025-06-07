@@ -101,61 +101,40 @@ create_install_dir() {
 setup_deployment_files() {
     print_status "Setting up deployment files..."
     
-    # Check if we're already in the grow-assistant repo directory
-    if [[ -f "docker-compose.yml" ]] && [[ -f "generate_secrets.sh" ]]; then
-        # Check if this is a git repository and pull latest changes
-        if [[ -d ".git" ]]; then
-            print_status "Updating deployment repository to latest version..."
-            if git pull origin main 2>/dev/null || git pull origin master 2>/dev/null; then
-                print_success "Repository updated successfully"
-            else
-                print_warning "Could not update repository (offline or no remote configured)"
-            fi
-        fi
+    # Always ensure we have the latest deployment files from GitHub
+    print_status "Ensuring latest deployment files from GitHub..."
+    
+    # Create temporary directory for fresh clone
+    TEMP_REPO_DIR=$(mktemp -d)
+    
+    # Clone the complete repository to ensure we get everything
+    if git clone https://github.com/sabbalot/grow-assistant.git "$TEMP_REPO_DIR"; then
+        print_success "Repository cloned successfully"
         
-        # Check if we're already in the target install directory
-        if [[ "$(pwd)" == "$INSTALL_DIR" ]]; then
-            print_success "Already in installation directory with deployment files"
-        else
-            print_status "Using deployment files from current directory"
-            cp docker-compose.yml "$INSTALL_DIR/"
-            cp generate_secrets.sh "$INSTALL_DIR/"
-            cp -r mosquitto "$INSTALL_DIR/" 2>/dev/null || true
-            cp -r node-red "$INSTALL_DIR/" 2>/dev/null || true
-            cp -r grafana "$INSTALL_DIR/" 2>/dev/null || true
-            cp -r loki "$INSTALL_DIR/" 2>/dev/null || true
-            cp -r promtail "$INSTALL_DIR/" 2>/dev/null || true
-            print_success "Copied deployment files from current directory"
-        fi
+        # Copy entire repository contents to install directory
+        cp -r "$TEMP_REPO_DIR"/* "$INSTALL_DIR/"
+        
+        # Clean up temporary directory
+        rm -rf "$TEMP_REPO_DIR"
+        
+        print_success "Latest deployment files downloaded and installed"
     else
-        # We're not in the repo, so clone it to get the files
-        print_status "Cloning GrowAssistant repository to get deployment files..."
-        
-        # Create temporary directory for cloning
-        TEMP_REPO_DIR=$(mktemp -d)
-        
-        # Clone the repository
-        if git clone https://github.com/sabbalot/grow-assistant.git "$TEMP_REPO_DIR"; then
-            print_success "Repository cloned successfully"
-            
-            # Copy files from the cloned repo
-            cp "$TEMP_REPO_DIR/docker-compose.yml" "$INSTALL_DIR/"
-            cp "$TEMP_REPO_DIR/generate_secrets.sh" "$INSTALL_DIR/"
-            cp -r "$TEMP_REPO_DIR/mosquitto" "$INSTALL_DIR/" 2>/dev/null || true
-            cp -r "$TEMP_REPO_DIR/node-red" "$INSTALL_DIR/" 2>/dev/null || true
-            cp -r "$TEMP_REPO_DIR/grafana" "$INSTALL_DIR/" 2>/dev/null || true
-            cp -r "$TEMP_REPO_DIR/loki" "$INSTALL_DIR/" 2>/dev/null || true
-            cp -r "$TEMP_REPO_DIR/promtail" "$INSTALL_DIR/" 2>/dev/null || true
-            
-            # Clean up temporary directory
-            rm -rf "$TEMP_REPO_DIR"
-            
-            print_success "Deployment files copied from repository"
-        else
-            print_error "Failed to clone GrowAssistant repository"
-            print_error "Please check your internet connection and try again"
-            exit 1
-        fi
+        print_error "❌ Failed to clone GrowAssistant repository"
+        print_error "This appears to be a network connectivity issue to GitHub."
+        echo ""
+        print_status "🔧 Troubleshooting suggestions:"
+        echo "  1. Check if GitHub is accessible: ping github.com"
+        echo "  2. Try a different DNS server: sudo echo 'nameserver 8.8.8.8' >> /etc/resolv.conf"
+        echo "  3. Check firewall/router settings"
+        echo "  4. Verify your internet connection works: ping 8.8.8.8"
+        echo ""
+        print_status "📁 For manual installation:"
+        echo "  1. Download the repository from another device"
+        echo "  2. Transfer docker-compose.yml and generate_secrets.sh to: $INSTALL_DIR"
+        echo "  3. Re-run this script"
+        echo ""
+        print_status "🌐 Repository: https://github.com/sabbalot/grow-assistant"
+        exit 1
     fi
 }
 

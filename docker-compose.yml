@@ -1,0 +1,260 @@
+services:
+  influxdb:
+    image: influxdb:2.7.10
+    container_name: influxdb
+    ports:
+      - "127.0.0.1:8086:8086"  # Only localhost access for security
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME_FILE: /run/secrets/influxdb-admin-username
+      DOCKER_INFLUXDB_INIT_PASSWORD_FILE: /run/secrets/influxdb-admin-password
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN_FILE: /run/secrets/influxdb-admin-token
+      DOCKER_INFLUXDB_INIT_ORG: growassistant
+      DOCKER_INFLUXDB_INIT_BUCKET: env_dev
+      DOCKER_INFLUXDB_INIT_BUCKET_RETENTION: 365d
+    secrets:
+      - influxdb-admin-username
+      - influxdb-admin-password
+      - influxdb-admin-token
+    networks:
+      - grow-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  postgres:
+    image: postgres:17.4
+    container_name: postgres
+    environment:
+      POSTGRES_USER_FILE: /run/secrets/postgres-user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+      POSTGRES_DB_FILE: /run/secrets/postgres-db
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"  # Only localhost access for security
+    networks:
+      - grow-net
+    secrets:
+      - postgres-user
+      - postgres-password
+      - postgres-db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$(cat /run/secrets/postgres-user) -d $$(cat /run/secrets/postgres-db)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  app:
+    image: phyrron/grow-assistant-app:latest
+    container_name: app
+    ports:
+      - "80:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      python_backend:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    environment:
+      - POSTGRES_HOST=postgres
+    networks:
+      - grow-net
+    restart: unless-stopped
+
+  python_backend:
+    image: phyrron/grow-assistant-backend:latest
+    container_name: backend
+    volumes:
+      - python-backend-config:/home/growassistant/config
+      - log_volume:/home/growassistant/logs
+      - ./mosquitto/config:/mosquitto_config_host:ro
+      - ./node-red:/node_red_config_host:ro
+    depends_on:
+      influxdb:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      docker-proxy:
+        condition: service_started
+    environment:
+      - POSTGRES_HOST=postgres
+      - INFLUXDB_URL=http://influxdb:8086
+      - MASTER_KEY_PATH=/run/secrets/master_key
+      - SUPERVISOR_USERNAME_FILE=/run/secrets/supervisor-username
+      - SUPERVISOR_PASSWORD_FILE=/run/secrets/supervisor-password
+      - INFLUXDB_INIT_USERNAME_FILE=/run/secrets/influxdb-admin-username
+      - INFLUXDB_INIT_PASSWORD_FILE=/run/secrets/influxdb-admin-password
+      - INFLUXDB_INIT_ADMIN_TOKEN_FILE=/run/secrets/influxdb-admin-token
+      - INFLUXDB_INIT_ORG_FILE=/run/secrets/influxdb-admin-org
+      - INFLUXDB_INIT_BUCKET_FILE=/run/secrets/influxdb-admin-bucket
+      - POSTGRES_USER_FILE=/run/secrets/postgres-user
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres-password
+      - POSTGRES_DB_FILE=/run/secrets/postgres-db
+      - DOCKER_HOST=tcp://docker-proxy:2375
+    ports:
+      - "127.0.0.1:8000:8000"  # Only localhost access for security
+    networks:
+      - grow-net
+    secrets:
+      - master_key
+      - supervisor-username
+      - supervisor-password
+      - influxdb-admin-username
+      - influxdb-admin-password
+      - influxdb-admin-token
+      - influxdb-admin-org
+      - influxdb-admin-bucket
+      - postgres-user
+      - postgres-password
+      - postgres-db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  docker-proxy:
+    image: alpine/socat:1.8.0.0
+    container_name: docker-proxy
+    command: tcp-listen:2375,fork,reuseaddr unix-connect:/var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - grow-net
+    restart: unless-stopped
+
+  grafana:
+    build:
+      context: ./grafana
+      dockerfile: Dockerfile.grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - grafana-etc:/etc/grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana-admin-password
+      GF_INSTALL_PLUGINS: "grafana-influxdb-flux-datasource"
+      INFLUXDB_INIT_ADMIN_TOKEN_FILE: /run/secrets/influxdb-admin-token
+      INFLUXDB_INIT_ORG: /run/secrets/influxdb-admin-org
+      INFLUXDB_INIT_BUCKET: /run/secrets/influxdb-admin-bucket
+    secrets:
+      - grafana-admin-password
+      - influxdb-admin-token
+      - influxdb-admin-org
+      - influxdb-admin-bucket
+    depends_on:
+      - influxdb
+      - loki
+    networks:
+      - grow-net
+    restart: unless-stopped
+
+  loki:
+    build:
+      context: ./loki
+      dockerfile: Dockerfile.loki
+    container_name: loki
+    expose:
+      - "3100"
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/local-config.yaml
+      - loki-data:/tmp/loki
+    networks:
+      - grow-net
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.2.1
+    container_name: promtail
+    volumes:
+      - log_volume:/python_backend_logs:ro
+      - ./promtail/promtail-config.yaml:/etc/promtail/config.yaml:ro
+      - promtail-positions:/tmp/promtail
+    command: -config.file=/etc/promtail/config.yaml
+    depends_on:
+      - loki
+    networks:
+      - grow-net
+    restart: unless-stopped
+
+  migrations:
+    image: phyrron/grow-assistant-backend:latest
+    container_name: migrations
+    entrypoint: ""
+    command: ["sh", "-c", "alembic upgrade head > /var/log/app_logs/migrations.log 2>&1"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER_FILE=/run/secrets/postgres-user
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres-password
+      - POSTGRES_DB_FILE=/run/secrets/postgres-db
+    networks:
+      - grow-net
+    secrets:
+      - postgres-user
+      - postgres-password
+      - postgres-db
+    restart: 'no'
+    volumes:
+      - log_volume:/var/log/app_logs
+
+secrets:
+  influxdb-admin-username:
+    file: .secrets/influxdb-admin-username
+  influxdb-admin-password:
+    file: .secrets/influxdb-admin-password
+  influxdb-admin-token:
+    file: .secrets/influxdb-admin-token
+  grafana-admin-password:
+    file: .secrets/grafana-admin-password
+  master_key:
+    file: .secrets/master_key
+  supervisor-username:
+    file: .secrets/supervisor-username
+  supervisor-password:
+    file: .secrets/supervisor-password
+  influxdb-admin-org:
+    file: .secrets/influxdb-admin-org
+  influxdb-admin-bucket:
+    file: .secrets/influxdb-admin-bucket
+  postgres-user:
+    file: .secrets/postgres-user
+  postgres-password:
+    file: .secrets/postgres-password
+  postgres-db:
+    file: .secrets/postgres-db
+
+volumes:
+  influxdb-data:
+  grafana-data:
+  grafana-etc:
+  postgres-data:
+  python-backend-config:
+  log_volume:
+  mosquitto_data:
+  mosquitto_log:
+  node_red_data:
+  mosquitto-config-vol:
+  node-red-config-vol:
+  loki-data:
+  promtail-positions: {}
+
+networks:
+  grow-net:
+    name: grow-net
+    driver: bridge

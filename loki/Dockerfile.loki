@@ -1,0 +1,11 @@
+# Dockerfile.loki
+FROM grafana/loki:3
+# Switch to root to set permissions
+USER root
+# Copy and run the custom entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+

@@ -1,0 +1,75 @@
+# Security - Never commit secrets or sensitive configuration
+.secrets/
+*.secrets
+secrets/
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.crt
+password*
+*password*
+*secret*
+*token*
+
+# Docker and runtime files
+.dockerignore
+docker-compose.override.yml
+docker-compose.prod.yml
+.docker/
+
+# Logs and runtime data
+*.log
+logs/
+*.out
+*.err
+
+# Backup files
+*.bak
+*.backup
+*.old
+*~
+.#*
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.vim/
+
+# Temporary files
+.tmp/
+tmp/
+temp/
+*.tmp
+*.temp
+
+# System monitoring and runtime
+.pid
+*.pid
+
+# Documentation build artifacts (if any)
+site/
+docs/_site/
+docs/.jekyll-cache/
+
+# User-specific configuration
+docker-compose.local.yml
+.local/
+
+# Volume data directories (if mounted locally)
+data/
+volumes/
+persistent/

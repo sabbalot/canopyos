@@ -41,3 +41,46 @@ This deployment uses third-party components (Grafana, InfluxDB, PostgreSQL)
 which are governed by their respective licenses.
 
 For GrowAssistant Platform licensing inquiries: seberhar@proton.me 
+DEPLOYMENT CONFIGURATION NOTICE
+
+Copyright (c) 2024 Sabbalot
+
+IMPORTANT: This repository contains DEPLOYMENT CONFIGURATIONS ONLY for the
+proprietary GrowAssistant Platform. This is NOT an open source software license.
+
+WHAT THIS REPOSITORY CONTAINS:
+- Docker Compose configurations
+- Setup scripts and documentation  
+- Configuration examples
+
+WHAT THIS REPOSITORY DOES NOT CONTAIN:
+- GrowAssistant platform source code
+- Any intellectual property of the GrowAssistant platform
+- Rights to the GrowAssistant platform itself
+
+PROPRIETARY SOFTWARE NOTICE:
+The GrowAssistant Platform accessed through these configurations is proprietary 
+commercial software. All rights reserved. No license is granted to the 
+GrowAssistant Platform itself through this deployment repository.
+
+DEPLOYMENT CONFIGURATION PERMISSIONS:
+Permission is granted to use, modify, and distribute these deployment 
+configurations for the purpose of deploying the GrowAssistant Platform, 
+subject to the following conditions:
+
+1. This notice must be included in all copies or substantial portions 
+   of the deployment configurations.
+
+2. The deployment configurations are provided "AS IS", without warranty 
+   of any kind.
+
+3. These permissions apply ONLY to the deployment configurations, NOT to 
+   the GrowAssistant Platform itself.
+
+4. Use of the GrowAssistant Platform is subject to its proprietary license terms.
+
+THIRD-PARTY COMPONENTS:
+This deployment uses third-party components (Grafana, InfluxDB, PostgreSQL) 
+which are governed by their respective licenses.
+
+For GrowAssistant Platform licensing inquiries: seberhar@proton.me 

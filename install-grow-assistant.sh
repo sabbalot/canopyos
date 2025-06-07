@@ -103,15 +103,20 @@ setup_deployment_files() {
     
     # Check if we're already in the grow-assistant repo directory
     if [[ -f "docker-compose.yml" ]] && [[ -f "generate_secrets.sh" ]]; then
-        print_status "Using deployment files from current directory"
-        cp docker-compose.yml "$INSTALL_DIR/"
-        cp generate_secrets.sh "$INSTALL_DIR/"
-        cp -r mosquitto "$INSTALL_DIR/" 2>/dev/null || true
-        cp -r node-red "$INSTALL_DIR/" 2>/dev/null || true
-        cp -r grafana "$INSTALL_DIR/" 2>/dev/null || true
-        cp -r loki "$INSTALL_DIR/" 2>/dev/null || true
-        cp -r promtail "$INSTALL_DIR/" 2>/dev/null || true
-        print_success "Copied deployment files from current directory"
+        # Check if we're already in the target install directory
+        if [[ "$(pwd)" == "$INSTALL_DIR" ]]; then
+            print_success "Already in installation directory with deployment files"
+        else
+            print_status "Using deployment files from current directory"
+            cp docker-compose.yml "$INSTALL_DIR/"
+            cp generate_secrets.sh "$INSTALL_DIR/"
+            cp -r mosquitto "$INSTALL_DIR/" 2>/dev/null || true
+            cp -r node-red "$INSTALL_DIR/" 2>/dev/null || true
+            cp -r grafana "$INSTALL_DIR/" 2>/dev/null || true
+            cp -r loki "$INSTALL_DIR/" 2>/dev/null || true
+            cp -r promtail "$INSTALL_DIR/" 2>/dev/null || true
+            print_success "Copied deployment files from current directory"
+        fi
     else
         # We're not in the repo, so clone it to get the files
         print_status "Cloning GrowAssistant repository to get deployment files..."

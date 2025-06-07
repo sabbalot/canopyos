@@ -79,7 +79,7 @@ create_secret_file "supervisor-username" "supervisor_admin"
 create_secret_file "supervisor-password" generate_strong_password 32
 
 # PostgreSQL Secrets
-create_secret_file "postgres-user" "admin" # Fixed username
+create_secret_file "postgres-user" "admin"
 create_secret_file "postgres-password" generate_strong_password 32
 create_secret_file "postgres-db" "growassistant" # Default database name
 

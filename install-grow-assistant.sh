@@ -130,7 +130,7 @@ setup_deployment_files() {
         echo ""
         print_status "📁 For manual installation:"
         echo "  1. Download the repository from another device"
-        echo "  2. Transfer docker-compose.yml and generate_secrets.sh to: $INSTALL_DIR"
+        echo "  2. Transfer everything to: $INSTALL_DIR"
         echo "  3. Re-run this script"
         echo ""
         print_status "🌐 Repository: https://github.com/sabbalot/grow-assistant"

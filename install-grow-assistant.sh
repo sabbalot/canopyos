@@ -103,6 +103,16 @@ setup_deployment_files() {
     
     # Check if we're already in the grow-assistant repo directory
     if [[ -f "docker-compose.yml" ]] && [[ -f "generate_secrets.sh" ]]; then
+        # Check if this is a git repository and pull latest changes
+        if [[ -d ".git" ]]; then
+            print_status "Updating deployment repository to latest version..."
+            if git pull origin main 2>/dev/null || git pull origin master 2>/dev/null; then
+                print_success "Repository updated successfully"
+            else
+                print_warning "Could not update repository (offline or no remote configured)"
+            fi
+        fi
+        
         # Check if we're already in the target install directory
         if [[ "$(pwd)" == "$INSTALL_DIR" ]]; then
             print_success "Already in installation directory with deployment files"

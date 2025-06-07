@@ -175,6 +175,10 @@ start_services() {
     
     cd "$INSTALL_DIR"
     
+    # Stop any existing services to ensure clean start
+    print_status "Stopping any existing services..."
+    docker compose down 2>/dev/null || true
+    
     # Start services
     docker compose up -d
     

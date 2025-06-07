@@ -53,7 +53,11 @@ check_system() {
     # Check if git is available (needed for cloning repo if not already in it)
     if ! command_exists git; then
         print_status "Installing git (required for downloading GrowAssistant)..."
-        sudo apt-get update && sudo apt-get install -y git
+        print_status "Updating package lists..."
+        sudo apt-get update
+        print_status "Installing git package..."
+        sudo apt-get install -y git
+        print_success "Git installed successfully"
     fi
     
     print_success "Linux system detected - compatible with GrowAssistant"
@@ -71,7 +75,7 @@ install_docker() {
     print_warning "For production deployments, consider manual installation: https://docs.docker.com/engine/install/"
     
     # Use Docker's official convenience script (supports all architectures)
-    curl -fsSL https://get.docker.com | sudo sh
+    curl -fSL https://get.docker.com | sudo sh
     
     # Add user to docker group
     sudo usermod -aG docker "$CURRENT_USER"
@@ -116,7 +120,7 @@ setup_deployment_files() {
         TEMP_REPO_DIR=$(mktemp -d)
         
         # Clone the repository
-        if git clone https://github.com/sabbalot/grow-assistant.git "$TEMP_REPO_DIR" 2>/dev/null; then
+        if git clone https://github.com/sabbalot/grow-assistant.git "$TEMP_REPO_DIR"; then
             print_success "Repository cloned successfully"
             
             # Copy files from the cloned repo
@@ -278,7 +282,7 @@ check_services() {
 # Main installation function
 main() {
     echo ""
-    print_status "🌱 GrowAssistant Installation Script for Raspberry Pi 🌱"
+    print_status "🌱 GrowAssistant Installation Script 🌱"
     echo ""
     
     # Check if running as root

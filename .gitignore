@@ -10,8 +10,14 @@ secrets/
 *.crt
 password*
 *password*
-*secret*
 *token*
+
+# Exclude actual secret files but not scripts that generate them
+.secrets/
+secrets/
+*.secret
+!generate_secrets.sh
+!*secrets.sh
 
 # Docker and runtime files
 .dockerignore

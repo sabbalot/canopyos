@@ -74,18 +74,17 @@ create_secret_file "grafana-admin-password" "admin"
 # Master Key (generic strong secret)
 create_secret_file "master_key" generate_random_string 64
 
-# Supervisor Secrets (for your Python backend's internal use)
+# Supervisor Secrets
 create_secret_file "supervisor-username" "supervisor_admin"
 create_secret_file "supervisor-password" generate_strong_password 32
 
 # PostgreSQL Secrets
 create_secret_file "postgres-user" "admin"
 create_secret_file "postgres-password" generate_strong_password 32
-create_secret_file "postgres-db" "growassistant" # Default database name
+create_secret_file "postgres-db" "growassistant"
 
 echo "--- Secret Generation Complete ---"
 echo "Make sure '$SECRETS_DIR/' is listed in your .gitignore file!"
-echo "You can now run 'docker compose up -d'."
 echo "If you re-run this script and files already exist, they will NOT be overwritten by default."
 
 # Make the script executable

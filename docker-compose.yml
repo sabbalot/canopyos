@@ -77,6 +77,7 @@ services:
       - log_volume:/home/growassistant/logs
       - ./mosquitto/config:/mosquitto_config_host:ro
       - ./node-red:/node_red_config_host:ro
+      - /dev/serial/by-id:/dev/serial/by-id:ro
     depends_on:
       influxdb:
         condition: service_healthy

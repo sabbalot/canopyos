@@ -25,6 +25,17 @@ generate_strong_password() {
   fi
 }
 
+# Function to generate a proper Fernet key (32 bytes, base64-encoded)
+generate_fernet_key() {
+  if command -v openssl &> /dev/null; then
+    # Generate 32 random bytes and base64 encode them
+    openssl rand -base64 32
+  else
+    # Fallback: generate 32 bytes using /dev/urandom and base64 encode
+    dd if=/dev/urandom bs=32 count=1 2>/dev/null | base64
+  fi
+}
+
 # Create .secrets directory if it doesn't exist
 if [ ! -d "$SECRETS_DIR" ]; then
   mkdir -p "$SECRETS_DIR"
@@ -71,8 +82,8 @@ create_secret_file "influxdb-admin-bucket" "env_dev" # Default bucket name
 # Grafana Secrets
 create_secret_file "grafana-admin-password" "admin"
 
-# Master Key (generic strong secret)
-create_secret_file "master_key" generate_random_string 64
+# Master Key (Fernet encryption key - 32 bytes base64-encoded)
+create_secret_file "master_key" generate_fernet_key
 
 # Supervisor Secrets
 create_secret_file "supervisor-username" "supervisor_admin"

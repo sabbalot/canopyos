@@ -18,6 +18,7 @@ INSTALL_DIR="/opt/grow-assistant"
 SERVICE_NAME="grow-assistant"
 USER_HOME="$HOME"
 CURRENT_USER=$(whoami)
+UPDATE_MODE=false
 
 # Function to print colored output
 print_status() {
@@ -101,6 +102,14 @@ create_install_dir() {
 setup_deployment_files() {
     print_status "Setting up deployment files..."
     
+    # Backup existing secrets if this is an update
+    if [[ "$UPDATE_MODE" == true && -d "$INSTALL_DIR/.secrets" ]]; then
+        print_status "Backing up existing secrets..."
+        BACKUP_DIR=$(mktemp -d)
+        cp -r "$INSTALL_DIR/.secrets" "$BACKUP_DIR/"
+        print_success "Secrets backed up to: $BACKUP_DIR"
+    fi
+    
     # Always ensure we have the latest deployment files from GitHub
     print_status "Ensuring latest deployment files from GitHub..."
     
@@ -113,6 +122,14 @@ setup_deployment_files() {
         
         # Copy entire repository contents to install directory
         cp -r "$TEMP_REPO_DIR"/* "$INSTALL_DIR/"
+        
+        # Restore secrets if this was an update
+        if [[ "$UPDATE_MODE" == true && -d "$BACKUP_DIR/.secrets" ]]; then
+            print_status "Restoring existing secrets..."
+            cp -r "$BACKUP_DIR/.secrets" "$INSTALL_DIR/"
+            rm -rf "$BACKUP_DIR"
+            print_success "Existing secrets restored"
+        fi
         
         # Clean up temporary directory
         rm -rf "$TEMP_REPO_DIR"
@@ -140,22 +157,41 @@ setup_deployment_files() {
 
 # Function to pull Docker images
 pull_docker_images() {
-    print_status "Pre-pulling main application images..."
+    if [[ "$UPDATE_MODE" == true ]]; then
+        print_status "Updating Docker images to latest versions..."
+    else
+        print_status "Pre-pulling main application images..."
+    fi
     
     cd "$INSTALL_DIR"
     
-    # Pull the main application images (optional optimization)
+    # Pull the main application images (force latest)
     docker pull phyrron/grow-assistant-app:latest
     docker pull phyrron/grow-assistant-backend:latest
+    
+    # Pull all images defined in docker-compose.yml
+    print_status "Pulling all images from docker-compose.yml..."
+    docker compose pull
     
     # Note: Supporting images (PostgreSQL, InfluxDB, etc.) will be pulled automatically by docker compose
     # Note: Grafana and Loki will be built locally from custom Dockerfiles
     
-    print_success "Main application images pulled successfully"
+    if [[ "$UPDATE_MODE" == true ]]; then
+        print_success "Docker images updated successfully"
+    else
+        print_success "Main application images pulled successfully"
+    fi
 }
 
 # Function to generate secrets
 generate_secrets() {
+    # Skip secret generation in update mode if secrets already exist
+    if [[ "$UPDATE_MODE" == true && -d "$INSTALL_DIR/.secrets" ]]; then
+        print_status "Update mode: Keeping existing secrets"
+        print_success "Existing secrets preserved"
+        return 0
+    fi
+    
     print_status "Generating secrets..."
     
     cd "$INSTALL_DIR"
@@ -277,10 +313,24 @@ check_services() {
     sudo systemctl status "$SERVICE_NAME" --no-pager -l || true
 }
 
+# Function to detect existing installation
+detect_existing_installation() {
+    if [[ -d "$INSTALL_DIR" && -f "$INSTALL_DIR/docker-compose.yml" ]]; then
+        print_status "Existing GrowAssistant installation detected"
+        return 0
+    else
+        return 1
+    fi
+}
+
 # Main installation function
 main() {
     echo ""
-    print_status "🌱 GrowAssistant Installation Script 🌱"
+    if [[ "$UPDATE_MODE" == true ]]; then
+        print_status "🔄 GrowAssistant Update Script 🔄"
+    else
+        print_status "🌱 GrowAssistant Installation Script 🌱"
+    fi
     echo ""
     
     # Check if running as root
@@ -289,7 +339,14 @@ main() {
         exit 1
     fi
     
-    # Perform installation steps
+    # Auto-detect update mode if not explicitly set
+    if [[ "$UPDATE_MODE" == false ]] && detect_existing_installation; then
+        print_status "Existing installation detected. Switching to update mode."
+        print_status "Use the --update flag to explicitly run in update mode."
+        UPDATE_MODE=true
+    fi
+    
+    # Perform installation/update steps
     check_system
     install_docker
     create_install_dir
@@ -299,18 +356,34 @@ main() {
     start_services
     create_systemd_service
     
-    show_access_info
-    
-    echo ""
-    print_status "Running final service check..."
-    check_services
-    
-    echo ""
-    print_success "🎉 Installation completed successfully! 🎉"
+    if [[ "$UPDATE_MODE" == true ]]; then
+        echo ""
+        print_success "🎉 Update completed successfully! 🎉"
+        echo ""
+        print_status "Changes applied:"
+        echo "  ✅ Latest deployment files downloaded"
+        echo "  ✅ Docker images updated to latest versions"
+        echo "  ✅ Existing secrets preserved"
+        echo "  ✅ Services restarted with new configuration"
+    else
+        show_access_info
+        
+        echo ""
+        print_status "Running final service check..."
+        check_services
+        
+        echo ""
+        print_success "🎉 Installation completed successfully! 🎉"
+    fi
 }
 
 # Handle script arguments
 case "${1:-}" in
+    --update)
+        UPDATE_MODE=true
+        main
+        exit 0
+        ;;
     --check-status)
         check_services
         exit 0
@@ -319,10 +392,24 @@ case "${1:-}" in
         echo "Usage: $0 [OPTIONS]"
         echo ""
         echo "Options:"
+        echo "  --update          Update existing GrowAssistant installation"
         echo "  --check-status    Check the status of GrowAssistant services"
         echo "  --help, -h        Show this help message"
         echo ""
         echo "This script will install and configure GrowAssistant on your Raspberry Pi."
+        echo ""
+        echo "Update Process:"
+        echo "  The script automatically detects existing installations and switches to"
+        echo "  update mode. It will:"
+        echo "    • Download latest deployment files"
+        echo "    • Update Docker images to latest versions"
+        echo "    • Preserve existing secrets and configuration"
+        echo "    • Restart services with new configuration"
+        echo ""
+        echo "Examples:"
+        echo "  $0                    # Fresh installation or auto-detected update"
+        echo "  $0 --update          # Explicit update mode"
+        echo "  $0 --check-status    # Check service status"
         exit 0
         ;;
     "")

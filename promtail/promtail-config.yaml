@@ -60,4 +60,14 @@ scrape_configs:
           - localhost
         labels:
           job: 'zigbee2mqtt'
-          __path__: /python_backend_logs/zigbee2mqtt.log
+          __path__: /zigbee2mqtt_logs/log/**/log.log
+    pipeline_stages:
+      - regex:
+          expression: '^\[(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\s+(?P<level_word>\w+):\s+(?P<message>.*)'
+      - labels:
+          level: level_word
+      - timestamp:
+          source: time
+          format: '%Y-%m-%d %H:%M:%S'
+      - output:
+          source: message

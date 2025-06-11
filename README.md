@@ -47,7 +47,6 @@ curl -fsSL https://raw.githubusercontent.com/sabbalot/grow-assistant/main/instal
 - 4GB+ RAM (Raspberry Pi 5, modern desktop, or cloud instance)
 - 64GB+ SSD storage (much better performance than SD cards)
 - Gigabit Ethernet connection
-- UPS for power protection (for edge/remote deployments)
 
 ### Software Requirements
 
@@ -73,15 +72,6 @@ The installation script handles everything automatically:
 **One-command:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/sabbalot/grow-assistant/main/install-grow-assistant.sh | bash
-```
-
-**Step-by-step (same result):**
-```bash
-# Download the script
-curl -fsSL https://raw.githubusercontent.com/sabbalot/grow-assistant/main/install-grow-assistant.sh -o install-grow-assistant.sh
-
-# Run the script
-bash ./install-grow-assistant.sh
 ```
 
 ### Method 2: Manual Installation
@@ -111,22 +101,6 @@ docker compose ps
 **For production docker deployments, consider:**
 - Manual Docker installation following [official docs](https://docs.docker.com/engine/install/ubuntu/)
 - Setting up external storage for data volumes
-
-### Method 3: Development Setup
-
-For development, customization, or contributing:
-
-```bash
-# Clone the repository
-git clone https://github.com/sabbalot/grow-assistant.git
-cd grow-assistant
-
-# Inspect or customize files (docker-compose.yml, etc.)
-# Make any needed modifications
-
-# Run the installation script
-bash ./install-grow-assistant.sh
-```
 
 ---
 
@@ -223,9 +197,10 @@ After installation, access the platform at:
 
 ### Environment Setup
 
-1. **Access the web interface** at `http://your-device-ip`
+1. **Access the frontend** at `http://your-device-ip`
 2. **Complete initial setup** following the on-screen wizard
 3. **Start GrowAssistant MQTT Broker through Frontend** for your IoT devices
+4. **Start zigbee2mqtt through Frontend** to enable zigbee device paring -> check "Devices" section for an integrated pairing UI or use the zigbee2mqtt frontend
 4. **Add sensors and devices** through the device management interface
 5. **Set up automation rules** based on your growing needs
 6. **Access Grafana dashboards** at `http://your-device-ip:3000` (admin/generated-password)
@@ -333,24 +308,47 @@ services:
 
 ## 🆙 Updates
 
-### Automatic Updates
+### Automatic Updates (Recommended)
+
+**Use the same installation command for updates:**
 
 ```bash
+# The script automatically detects existing installations and updates them
+curl -fsSL https://raw.githubusercontent.com/sabbalot/grow-assistant/main/install-grow-assistant.sh | bash
+```
+
+**Or use explicit update mode:**
+
+```bash
+# Explicitly run in update mode
+curl -fsSL https://raw.githubusercontent.com/sabbalot/grow-assistant/main/install-grow-assistant.sh | bash -s -- --update
+```
+
+**What happens during updates:**
+- ✅ Downloads latest deployment files from GitHub
+- ✅ Updates Docker images to latest versions  
+- ✅ Preserves existing secrets and configuration
+- ✅ Restarts services with new configuration
+- ✅ Shows clear update completion status
+
+### Manual Docker Updates
+
+For manual control over Docker image updates:
+
+```bash
+# Navigate to installation directory
+cd /opt/grow-assistant  # (or your installation directory)
+
 # Pull latest images and restart
 docker compose pull
 docker compose up -d
 ```
 
-### Update Script
+### Check Installation Status
 
 ```bash
-# Check for updates
-./install-grow-assistant.sh --check-status
-
-# Update to latest version
-git pull origin main
-docker compose pull
-docker compose up -d
+# Check current service status
+curl -fsSL https://raw.githubusercontent.com/sabbalot/grow-assistant/main/install-grow-assistant.sh | bash -s -- --check-status
 ```
 
 ---

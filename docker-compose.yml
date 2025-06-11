@@ -182,6 +182,7 @@ services:
     volumes:
       - log_volume:/python_backend_logs:ro
       - ./promtail/promtail-config.yaml:/etc/promtail/config.yaml:ro
+      - zigbee2mqtt_data:/zigbee2mqtt_logs:ro
       - promtail-positions:/tmp/promtail
     command: -config.file=/etc/promtail/config.yaml
     depends_on:
@@ -254,6 +255,7 @@ volumes:
   node-red-config-vol:
   loki-data:
   promtail-positions: {}
+  zigbee2mqtt_data:
 
 networks:
   grow-net:

@@ -68,6 +68,16 @@ check_system() {
 install_docker() {
     if command_exists docker && (command_exists docker-compose || docker compose version &>/dev/null); then
         print_success "Docker and Docker Compose already installed"
+        
+        # Check if user is in docker group
+        if groups "$CURRENT_USER" | grep -q '\bdocker\b'; then
+            print_success "User $CURRENT_USER is already in docker group"
+        else
+            print_status "Adding user $CURRENT_USER to docker group..."
+            sudo usermod -aG docker "$CURRENT_USER"
+            print_success "User added to docker group"
+            print_warning "You may need to log out and back in for Docker group membership to take effect"
+        fi
         return 0
     fi
     

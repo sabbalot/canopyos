@@ -11,7 +11,7 @@ services:
       DOCKER_INFLUXDB_INIT_USERNAME_FILE: /run/secrets/influxdb-admin-username
       DOCKER_INFLUXDB_INIT_PASSWORD_FILE: /run/secrets/influxdb-admin-password
       DOCKER_INFLUXDB_INIT_ADMIN_TOKEN_FILE: /run/secrets/influxdb-admin-token
-      DOCKER_INFLUXDB_INIT_ORG: growassistant
+      DOCKER_INFLUXDB_INIT_ORG: canopyos
       DOCKER_INFLUXDB_INIT_BUCKET: env_dev
       DOCKER_INFLUXDB_INIT_BUCKET_RETENTION: 365d
     secrets:
@@ -52,7 +52,7 @@ services:
     restart: unless-stopped
 
   app:
-    image: phyrron/grow-assistant-app:latest
+    image: phyrron/canopyos-app:latest
     container_name: app
     ports:
       - "80:80"
@@ -70,11 +70,11 @@ services:
     restart: unless-stopped
 
   python_backend:
-    image: phyrron/grow-assistant-backend:latest
+    image: phyrron/canopyos-backend:latest
     container_name: backend
     volumes:
-      - python-backend-config:/home/growassistant/config
-      - log_volume:/home/growassistant/logs
+      - python-backend-config:/home/canopyos/config
+      - log_volume:/home/canopyos/logs
       - ./mosquitto/config:/mosquitto_config_host:ro
       - ./node-red:/node_red_config_host:ro
       - /dev/serial/by-id:/dev/serial/by-id:ro
@@ -192,7 +192,7 @@ services:
     restart: unless-stopped
 
   migrations:
-    image: phyrron/grow-assistant-backend:latest
+    image: phyrron/canopyos-backend:latest
     container_name: migrations
     entrypoint: ""
     command: ["sh", "-c", "alembic upgrade head > /var/log/app_logs/migrations.log 2>&1"]

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# GrowAssistant Installation Script for Raspberry Pi
-# This script automates the complete installation and setup of GrowAssistant
+# CanopyOS Installation Script for Raspberry Pi
+# This script automates the complete installation and setup of CanopyOS
 # including Docker, secrets generation, and systemd service creation
 
 set -e  # Exit on any error
@@ -14,8 +14,8 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-INSTALL_DIR="/opt/grow-assistant"
-SERVICE_NAME="grow-assistant"
+INSTALL_DIR="/opt/canopyos"
+SERVICE_NAME="canopyos"
 USER_HOME="$HOME"
 CURRENT_USER=$(whoami)
 UPDATE_MODE=false
@@ -53,7 +53,7 @@ check_system() {
     
     # Check if git is available (needed for cloning repo if not already in it)
     if ! command_exists git; then
-        print_status "Installing git (required for downloading GrowAssistant)..."
+        print_status "Installing git (required for downloading CanopyOS)..."
         print_status "Updating package lists..."
         sudo apt-get update
         print_status "Installing git package..."
@@ -61,7 +61,7 @@ check_system() {
         print_success "Git installed successfully"
     fi
     
-    print_success "Linux system detected - compatible with GrowAssistant"
+    print_success "Linux system detected - compatible with CanopyOS"
 }
 
 # Function to install Docker if not present
@@ -127,7 +127,7 @@ setup_deployment_files() {
     TEMP_REPO_DIR=$(mktemp -d)
     
     # Clone the complete repository to ensure we get everything
-    if git clone https://github.com/sabbalot/grow-assistant.git "$TEMP_REPO_DIR"; then
+    if git clone https://github.com/sabbalot/canopyos.git "$TEMP_REPO_DIR"; then
         print_success "Repository cloned successfully"
         
         # Copy entire repository contents to install directory
@@ -146,21 +146,20 @@ setup_deployment_files() {
         
         print_success "Latest deployment files downloaded and installed"
     else
-        print_error "❌ Failed to clone GrowAssistant repository"
+        print_error "❌ Failed to clone CanopyOS repository"
         print_error "This appears to be a network connectivity issue to GitHub."
         echo ""
         print_status "🔧 Troubleshooting suggestions:"
         echo "  1. Check if GitHub is accessible: ping github.com"
-        echo "  2. Try a different DNS server: sudo echo 'nameserver 8.8.8.8' >> /etc/resolv.conf"
-        echo "  3. Check firewall/router settings"
-        echo "  4. Verify your internet connection works: ping 8.8.8.8"
+        echo "  2. Check firewall/router settings"
+        echo "  3. Verify your internet connection works: ping 8.8.8.8"
         echo ""
         print_status "📁 For manual installation:"
         echo "  1. Download the repository from another device"
         echo "  2. Transfer everything to: $INSTALL_DIR"
         echo "  3. Re-run this script"
         echo ""
-        print_status "🌐 Repository: https://github.com/sabbalot/grow-assistant"
+        print_status "🌐 Repository: https://github.com/sabbalot/canopyos"
         exit 1
     fi
 }
@@ -176,8 +175,8 @@ pull_docker_images() {
     cd "$INSTALL_DIR"
     
     # Pull the main application images (force latest)
-    docker pull phyrron/grow-assistant-app:latest
-    docker pull phyrron/grow-assistant-backend:latest
+    docker pull phyrron/canopyos-app:latest
+    docker pull phyrron/canopyos-backend:latest
     
     # Pull all images defined in docker-compose.yml
     print_status "Pulling all images from docker-compose.yml..."
@@ -217,7 +216,7 @@ generate_secrets() {
 
 # Function to start services
 start_services() {
-    print_status "Starting GrowAssistant services..."
+    print_status "Starting CanopyOS..."
     
     cd "$INSTALL_DIR"
     
@@ -229,7 +228,7 @@ start_services() {
     docker compose up -d
     
     # Wait a bit for services to start
-    sleep 10
+    sleep 15
     
     # Check service status
     if docker compose ps | grep -q "Up"; then
@@ -247,7 +246,7 @@ create_systemd_service() {
     # Create service file
     sudo tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null <<EOF
 [Unit]
-Description=GrowAssistant IoT Growing Platform
+Description=CanopyOS IoT Growing Platform
 Requires=docker.service
 After=docker.service
 
@@ -277,9 +276,19 @@ show_access_info() {
     ip_address=$(hostname -I | cut -d' ' -f1)
     
     echo ""
-    print_success "=== GrowAssistant Installation Complete ==="
+    print_success "=== CanopyOS Installation Complete ==="
     echo ""
-    echo "Access your GrowAssistant installation at:"
+    echo "  ██████╗ █████╗ ███╗   ██╗ ██████╗ ██████╗ ██╗   ██╗ ██████╗ ███████╗"
+    echo " ██╔════╝██╔══██╗████╗  ██║██╔═══██╗██╔══██╗╚██╗ ██╔╝██╔═══██╗██╔════╝"
+    echo " ██║     ███████║██╔██╗ ██║██║   ██║██████╔╝ ╚████╔╝ ██║   ██║███████╗"
+    echo " ██║     ██╔══██║██║╚██╗██║██║   ██║██╔═══╝   ╚██╔╝  ██║   ██║╚════██║"
+    echo " ╚██████╗██║  ██║██║ ╚████║╚██████╔╝██║        ██║   ╚██████╔╝███████║"
+    echo "  ╚═════╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝        ╚═╝    ╚═════╝ ╚══════╝"
+    echo ""
+    echo "            🌱 Your plants are about to live their best life! 🌱"
+    echo "         🤖 Warning: May cause excessive plant-parent behavior 🤖"
+    echo ""
+    echo "Access your CanopyOS installation at:"
     echo "  🌐 Web Interface: http://${ip_address}"
     echo "  🌐 Web Interface: http://localhost (if accessing locally)"
     echo "  📊 Grafana Dashboard: http://${ip_address}:3000"
@@ -301,9 +310,8 @@ show_access_info() {
     echo "  🔐 Secrets:      ${INSTALL_DIR}/.secrets/"
     echo ""
     echo "Next Steps:"
-    echo "  1. Access the web interface to complete initial setup"
-    echo "  2. Configure your IoT devices and MQTT settings"
-    echo "  3. Set up your growing environment monitoring"
+    echo "  1. Access the web interface at http://${ip_address}"
+    echo "  2. Onboard your first devices and configure your grow environment"
     echo ""
     print_warning "Note: If you added your user to the Docker group, you may need to log out and back in"
 }
@@ -326,7 +334,7 @@ check_services() {
 # Function to detect existing installation
 detect_existing_installation() {
     if [[ -d "$INSTALL_DIR" && -f "$INSTALL_DIR/docker-compose.yml" ]]; then
-        print_status "Existing GrowAssistant installation detected"
+        print_status "Existing CanopyOS installation detected"
         return 0
     else
         return 1
@@ -337,9 +345,9 @@ detect_existing_installation() {
 main() {
     echo ""
     if [[ "$UPDATE_MODE" == true ]]; then
-        print_status "🔄 GrowAssistant Update Script 🔄"
+        print_status "🔄 CanopyOS Update Script 🔄"
     else
-        print_status "🌱 GrowAssistant Installation Script 🌱"
+        print_status "🌱 CanopyOS Installation Script 🌱"
     fi
     echo ""
     
@@ -402,11 +410,11 @@ case "${1:-}" in
         echo "Usage: $0 [OPTIONS]"
         echo ""
         echo "Options:"
-        echo "  --update          Update existing GrowAssistant installation"
-        echo "  --check-status    Check the status of GrowAssistant services"
+        echo "  --update          Update existing CanopyOS installation"
+        echo "  --check-status    Check the status of CanopyOS services"
         echo "  --help, -h        Show this help message"
         echo ""
-        echo "This script will install and configure GrowAssistant on your Raspberry Pi."
+        echo "This script will install and configure CanopyOS on your Raspberry Pi."
         echo ""
         echo "Update Process:"
         echo "  The script automatically detects existing installations and switches to"

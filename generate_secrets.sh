@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Script to generate secrets for the Grow Assistant deployment
+# Script to generate secrets for the CanopyOS deployment
 
 SECRETS_DIR=".secrets"
 
@@ -76,7 +76,7 @@ echo "--- Generating Secrets ---"
 create_secret_file "influxdb-admin-username" "admin" # Fixed username
 create_secret_file "influxdb-admin-password" generate_strong_password 32
 create_secret_file "influxdb-admin-token" generate_random_string 40 # InfluxDB tokens are often longer
-create_secret_file "influxdb-admin-org" "growassistant" # Default org name
+create_secret_file "influxdb-admin-org" "canopyos" # Default org name
 create_secret_file "influxdb-admin-bucket" "env_dev" # Default bucket name
 
 # Grafana Secrets
@@ -92,7 +92,7 @@ create_secret_file "supervisor-password" generate_strong_password 32
 # PostgreSQL Secrets
 create_secret_file "postgres-user" "admin"
 create_secret_file "postgres-password" generate_strong_password 32
-create_secret_file "postgres-db" "growassistant"
+create_secret_file "postgres-db" "canopyos"
 
 echo "--- Secret Generation Complete ---"
 echo "Make sure '$SECRETS_DIR/' is listed in your .gitignore file!"

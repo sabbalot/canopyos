@@ -1,9 +1,9 @@
-# 🌱 GrowAssistant - IoT Growing Automation Platform
+# 🌱 CanopyOS - IoT Growing Automation Platform
 
 **Transform consumer IoT devices into intelligent, enterprise-level growing systems with plug-and-play setup.**
 
-[![Docker Pulls](https://img.shields.io/docker/pulls/phyrron/grow-assistant-backend.svg)](https://hub.docker.com/r/phyrron/grow-assistant-backend)
-[![Docker Pulls](https://img.shields.io/docker/pulls/phyrron/grow-assistant-app.svg)](https://hub.docker.com/r/phyrron/grow-assistant-app)
+[![Docker Pulls](https://img.shields.io/docker/pulls/phyrron/canopyos-backend.svg)](https://hub.docker.com/r/phyrron/canopyos-backend)
+[![Docker Pulls](https://img.shields.io/docker/pulls/phyrron/canopyos-app.svg)](https://hub.docker.com/r/phyrron/canopyos-app)
 
 ---
 
@@ -12,7 +12,7 @@
 **One-command installation:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sabbalot/grow-assistant/main/install-grow-assistant.sh | bash
+curl -fsSL https://raw.githubusercontent.com/sabbalot/canopyos/main/install-canopyos.sh | bash
 ```
 
 **Access your installation at:** `http://your-device-ip`
@@ -71,7 +71,7 @@ The installation script handles everything automatically:
 
 **One-command:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sabbalot/grow-assistant/main/install-grow-assistant.sh | bash
+curl -fsSL https://raw.githubusercontent.com/sabbalot/canopyos/main/install-canopyos.sh | bash
 ```
 
 ### Method 2: Manual Installation
@@ -85,8 +85,8 @@ sudo usermod -aG docker $USER
 # Log out and back in after adding user to docker group
 
 # 2. Clone repository
-git clone https://github.com/sabbalot/grow-assistant.git
-cd grow-assistant
+git clone https://github.com/sabbalot/canopyos.git
+cd canopyos
 
 # 3. Generate secrets
 bash ./generate_secrets.sh
@@ -112,30 +112,30 @@ The installation script creates a systemd service for automatic startup:
 
 ```bash
 # Service management
-sudo systemctl start grow-assistant      # Start services
-sudo systemctl stop grow-assistant       # Stop services  
-sudo systemctl restart grow-assistant    # Restart services
-sudo systemctl status grow-assistant     # Check status
+sudo systemctl start canopyos      # Start services
+sudo systemctl stop canopyos       # Stop services  
+sudo systemctl restart canopyos    # Restart services
+sudo systemctl status canopyos     # Check status
 
 # Enable/disable automatic startup
-sudo systemctl enable grow-assistant     # Enable auto-start
-sudo systemctl disable grow-assistant    # Disable auto-start
+sudo systemctl enable canopyos     # Enable auto-start
+sudo systemctl disable canopyos    # Disable auto-start
 ```
 
 #### Manual Systemd Service Creation
 
-If you prefer to create the systemd service manually, create the file `/etc/systemd/system/grow-assistant.service`:
+If you prefer to create the systemd service manually, create the file `/etc/systemd/system/canopyos.service`:
 
 ```ini
 [Unit]
-Description=GrowAssistant IoT Growing Platform
+Description=CanopyOS IoT Growing Platform
 Requires=docker.service
 After=docker.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=/opt/grow-assistant
+WorkingDirectory=/opt/canopyos
 ExecStart=/usr/bin/docker compose up -d
 ExecStop=/usr/bin/docker compose down
 User=your-username
@@ -149,15 +149,15 @@ WantedBy=multi-user.target
 
 ```bash
 # Create the service file (adjust paths and username)
-sudo nano /etc/systemd/system/grow-assistant.service
+sudo nano /etc/systemd/system/canopyos.service
 
 # Reload systemd and enable the service
 sudo systemctl daemon-reload
-sudo systemctl enable grow-assistant
-sudo systemctl start grow-assistant
+sudo systemctl enable canopyos
+sudo systemctl start canopyos
 ```
 
-**Important:** Replace `/opt/grow-assistant` with your actual installation directory and `your-username` with your actual username.
+**Important:** Replace `/opt/canopyos` with your actual installation directory and `your-username` with your actual username.
 
 ### Manual Docker Management
 
@@ -165,7 +165,7 @@ For direct Docker control:
 
 ```bash
 # Navigate to installation directory
-cd /opt/grow-assistant  # (or your chosen directory)
+cd /opt/canopyos  # (or your chosen directory)
 
 # Service management
 docker compose up -d      # Start services in background
@@ -188,7 +188,7 @@ After installation, access the platform at:
 
 - **Main Application:** Port 80 (HTTP)
 - **Grafana Dashboard:** Port 3000 (HTTP)
-- **Grow Assistant API:** Port 8000 (localhost only)
+- **CanopyOS API:** Port 8000 (localhost only)
 - **InfluxDB:** Port 8086 (localhost only)
 
 ---
@@ -199,7 +199,7 @@ After installation, access the platform at:
 
 1. **Access the frontend** at `http://your-device-ip`
 2. **Complete initial setup** following the on-screen wizard
-3. **Start GrowAssistant MQTT Broker through Frontend** for your IoT devices
+3. **Start CanopyOS MQTT Broker through Frontend** for your IoT devices
 4. **Start zigbee2mqtt through Frontend** to enable zigbee device paring -> check "Devices" section for an integrated pairing UI or use the zigbee2mqtt frontend
 4. **Add sensors and devices** through the device management interface
 5. **Set up automation rules** based on your growing needs
@@ -208,7 +208,7 @@ After installation, access the platform at:
 
 ### IoT Device Integration
 
-GrowAssistant supports a wide range of IoT devices:
+CanopyOS supports a wide range of IoT devices:
 
 - **Zigbee Sensors:** Temperature, humidity, soil moisture
 - **Smart Plugs:** For pumps, lights, fans, heaters
@@ -258,7 +258,7 @@ sudo systemctl status docker
 # Restart Docker if needed
 sudo systemctl restart docker
 
-# Restart GrowAssistant
+# Restart CanopyOS
 docker compose down && docker compose up -d
 ```
 
@@ -274,7 +274,7 @@ docker compose logs postgres
 
 # Reset database (⚠️ data loss)
 docker compose down
-docker volume rm grow-assistant_postgres-data
+docker volume rm canopyos_postgres-data
 docker compose up -d
 ```
 
@@ -285,8 +285,8 @@ docker compose up -d
 
 ```bash
 # Install to custom location
-export INSTALL_DIR="/home/pi/grow-assistant"
-./install-grow-assistant.sh
+export INSTALL_DIR="/home/pi/canopyos"
+./install-canopyos.sh
 ```
 
 ### Resource Limitations
@@ -314,14 +314,14 @@ services:
 
 ```bash
 # The script automatically detects existing installations and updates them
-curl -fsSL https://raw.githubusercontent.com/sabbalot/grow-assistant/main/install-grow-assistant.sh | bash
+curl -fsSL https://raw.githubusercontent.com/sabbalot/canopyos/main/install-canopyos.sh | bash
 ```
 
 **Or use explicit update mode:**
 
 ```bash
 # Explicitly run in update mode
-curl -fsSL https://raw.githubusercontent.com/sabbalot/grow-assistant/main/install-grow-assistant.sh | bash -s -- --update
+curl -fsSL https://raw.githubusercontent.com/sabbalot/canopyos/main/install-canopyos.sh | bash -s -- --update
 ```
 
 **What happens during updates:**
@@ -337,7 +337,7 @@ For manual control over Docker image updates:
 
 ```bash
 # Navigate to installation directory
-cd /opt/grow-assistant  # (or your installation directory)
+cd /opt/canopyos  # (or your installation directory)
 
 # Pull latest images and restart
 docker compose pull
@@ -348,7 +348,7 @@ docker compose up -d
 
 ```bash
 # Check current service status
-curl -fsSL https://raw.githubusercontent.com/sabbalot/grow-assistant/main/install-grow-assistant.sh | bash -s -- --check-status
+curl -fsSL https://raw.githubusercontent.com/sabbalot/canopyos/main/install-canopyos.sh | bash -s -- --check-status
 ```
 
 ---
@@ -370,9 +370,9 @@ curl -fsSL https://raw.githubusercontent.com/sabbalot/grow-assistant/main/instal
 ### Getting Help
 
 - **Documentation:** Comprehensive guides in the web interface
-- **Issues:** [GitHub Issues](https://github.com/sabbalot/grow-assistant/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/sabbalot/grow-assistant/discussions)
-- **Discord**: [GrowAssistant Discord](https://discord.gg/m7KAwWpq)
+- **Issues:** [GitHub Issues](https://github.com/sabbalot/canopyos/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/sabbalot/canopyos/discussions)
+- **Discord**: [CanopyOS Discord](https://discord.gg/m7KAwWpq)
 
 ### Contributing
 

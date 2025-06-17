@@ -192,6 +192,35 @@ pull_docker_images() {
     fi
 }
 
+# Function to check for network conflicts
+check_network_conflicts() {
+    print_status "Checking for network conflicts..."
+    
+    # Check if grow-net network already exists
+    if docker network ls --format "{{.Name}}" | grep -q "^grow-net$"; then
+        print_warning "Existing Docker network 'grow-net' detected"
+        print_warning "This network may have been left from a previous installation"
+        echo ""
+        print_status "🔧 To resolve this issue, you have two options:"
+        echo ""
+        echo "  Option 1 - Remove the conflicting network (RECOMMENDED):"
+        echo "    docker network rm grow-net"
+        echo ""
+        echo "  Option 2 - If you have other services using this network:"
+        echo "    1. Check what's connected: docker network inspect grow-net"
+        echo "    2. Disconnect other services first, then remove the network"
+        echo ""
+        print_status "💡 This network will be recreated with the proper configuration"
+        print_status "💡 Run this script again after removing the network"
+        echo ""
+        
+        # Exit to let user handle the conflict manually
+        exit 1
+    fi
+    
+    print_success "No network conflicts detected"
+}
+
 # Function to generate secrets
 generate_secrets() {
     # Skip secret generation in update mode if secrets already exist
@@ -371,6 +400,7 @@ main() {
     setup_deployment_files
     pull_docker_images
     generate_secrets
+    check_network_conflicts
     start_services
     create_systemd_service
     

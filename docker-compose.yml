@@ -3,7 +3,7 @@ services:
     image: influxdb:2.7.10
     container_name: influxdb
     ports:
-      - "127.0.0.1:8086:8086"  # Only localhost access for security
+      - "8086:8086"  # open network for custom analytics jobs
     volumes:
       - influxdb-data:/var/lib/influxdb2
     environment:

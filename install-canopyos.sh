@@ -257,7 +257,7 @@ start_services() {
     docker compose up -d
     
     # Wait a bit for services to start
-    sleep 15
+    sleep 30
     
     # Check service status
     if docker compose ps | grep -q "Up"; then

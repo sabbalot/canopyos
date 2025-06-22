@@ -196,7 +196,18 @@ pull_docker_images() {
 check_network_conflicts() {
     print_status "Checking for network conflicts..."
     
-    # Check if grow-net network already exists
+    # Skip network conflict check in update mode - existing networks are expected
+    if [[ "$UPDATE_MODE" == true ]]; then
+        if docker network ls --format "{{.Name}}" | grep -q "^grow-net$"; then
+            print_status "Update mode: Existing 'grow-net' network detected and will be preserved"
+        else
+            print_status "Update mode: 'grow-net' network will be created by docker compose"
+        fi
+        print_success "Network check completed for update mode"
+        return 0
+    fi
+    
+    # Check if grow-net network already exists (fresh installation only)
     if docker network ls --format "{{.Name}}" | grep -q "^grow-net$"; then
         print_warning "Existing Docker network 'grow-net' detected"
         print_warning "This network may have been left from a previous installation"

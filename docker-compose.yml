@@ -37,7 +37,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:5432:5432"  # Only localhost access for security
+      - "5432:5432"
     networks:
       - grow-net
     secrets:
@@ -78,6 +78,8 @@ services:
       - ./mosquitto/config:/mosquitto_config_host:ro
       - ./node-red:/node_red_config_host:ro
       - /dev/serial/by-id:/dev/serial/by-id:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     depends_on:
       influxdb:
         condition: service_healthy
@@ -214,6 +216,8 @@ services:
     restart: 'no'
     volumes:
       - log_volume:/var/log/app_logs
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
 
 secrets:
   influxdb-admin-username:

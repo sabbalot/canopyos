@@ -79,7 +79,6 @@ services:
       - ./node-red:/node_red_config_host:ro
       - /dev/serial/by-id:/dev/serial/by-id:ro
       - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
     depends_on:
       influxdb:
         condition: service_healthy
@@ -217,7 +216,6 @@ services:
     volumes:
       - log_volume:/var/log/app_logs
       - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
 
 secrets:
   influxdb-admin-username:

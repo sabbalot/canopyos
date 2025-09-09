@@ -19,7 +19,7 @@ secrets/
 *.secret
 !generate_secrets.sh
 !*secrets.sh
-
+/documentation/
 # Docker and runtime files
 .dockerignore
 docker-compose.override.yml

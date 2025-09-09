@@ -54,6 +54,7 @@ class VersionInfo(BaseModel):
     latest: Dict[str, Any]
     update_available: bool
     update_in_progress: bool = False
+    channel: Optional[str] = None
     last_checked_at: Optional[datetime] = None
     last_result: Optional[str] = None
 
@@ -65,3 +66,50 @@ class UpdateEvent(BaseModel):
     state: str
     message: str
     ts: datetime
+
+
+class BackupCancelRequest(BaseModel):
+    """Request to cancel a running backup job."""
+
+    backup_id: str
+
+
+class BackupStartRequest(BaseModel):
+    """Request to start a backup job."""
+
+    scope: List[Literal["postgres", "influx", "config"]] = Field(default_factory=lambda: ["postgres", "influx", "config"])
+    label: Optional[str] = None
+
+
+class BackupStartResponse(BaseModel):
+    """Accepted response for a started backup."""
+
+    backup_id: str
+    state: Literal["backup", "completed", "failed"]
+
+
+class BackupStatusResponse(BaseModel):
+    """Current status and progress for a backup session."""
+
+    backup_id: str
+    state: str
+    progress: int = Field(ge=0, le=100)
+    phase: str
+    log_tail: List[str] = []
+    started_at: Optional[datetime] = None
+
+
+class BackupListItem(BaseModel):
+    backup_id: str
+    created_at: datetime
+    size_bytes: Optional[int] = None
+    scope: List[str] = []
+
+
+class BackupListResponse(BaseModel):
+    items: List[BackupListItem]
+
+
+class BackupRestoreRequest(BaseModel):
+    backup_id: str
+    scope: List[Literal["postgres", "influx", "config"]] = Field(default_factory=lambda: ["postgres", "influx", "config"])

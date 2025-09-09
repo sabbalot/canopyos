@@ -38,6 +38,27 @@ scrape_configs:
           job: 'migrations'
           __path__: /python_backend_logs/migrations.log
 
+  - job_name: 'updater'
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: 'updater'
+          __path__: /update_logs/updater_*.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[\.,]?\d{0,6})\s+(?P<level_word>\w+)\s+(?P<message>.*)'
+      - labels:
+          level: level_word
+      - timestamp:
+          source: time
+          format: '%Y-%m-%d %H:%M:%S,%f'
+          fallback_formats:
+            - '%Y-%m-%d %H:%M:%S.%f'
+            - '%Y-%m-%d %H:%M:%S'
+      - output:
+          source: message
+
   - job_name: 'mosquitto'
     static_configs:
       - targets:

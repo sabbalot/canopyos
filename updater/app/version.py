@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -10,6 +11,8 @@ from typing import Any, Dict, Optional, Tuple
 import httpx
 
 from .schemas import VersionInfo
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_docker_bin() -> Optional[str]:
@@ -71,8 +74,8 @@ async def _inspect_container(container: str) -> Dict[str, Any]:
     return {}
 
 
-def _parse_current_from_inspect(obj: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    # returns (image_ref, tag, digest)
+def _parse_current_from_inspect(obj: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    # returns (image_ref, tag, digest, image_id)
     try:
         image_ref = obj.get("Config", {}).get("Image")
         tag: Optional[str] = None
@@ -91,9 +94,15 @@ def _parse_current_from_inspect(obj: Dict[str, Any]) -> Tuple[Optional[str], Opt
                     digest = ref.split("@", 1)[1]
             except Exception:
                 pass
-        return image_ref, tag, digest
+        
+        # Get Image ID as fallback identifier
+        image_id = obj.get("Image") or ""
+        if image_id.startswith("sha256:"):
+            image_id = image_id[7:]  # Remove sha256: prefix
+            
+        return image_ref, tag, digest, image_id
     except Exception:
-        return None, None, None
+        return None, None, None, None
 
 
 def _repo_from_image_ref(image_ref: Optional[str]) -> Optional[str]:
@@ -111,13 +120,19 @@ async def get_current_versions(services: list[str]) -> Dict[str, Dict[str, Any]]
     for svc in services:
         name = _container_name_for_service(svc)
         info = await _inspect_container(name)
-        image_ref, tag, digest = _parse_current_from_inspect(info)
+        image_ref, tag, digest, image_id = _parse_current_from_inspect(info)
+        
+        # Note: We cannot fetch digest from registry for current version
+        # because that would give us the latest digest, not what's running!
+        # We use image_id as a fallback when RepoDigests is empty
+        
         out_key = "backend" if svc == "python_backend" else svc
         out[out_key] = {
             "image": image_ref or "",
             "repo": _repo_from_image_ref(image_ref) or "",
             "tag": tag or "",
             "digest": digest or "",
+            "image_id": image_id or "",
         }
     return out
 
@@ -153,10 +168,26 @@ def _compute_update_available(current: Dict[str, Dict[str, Any]], latest: Dict[s
     for key, svc_key in (("app", "app"), ("backend", "python_backend")):
         cur = current.get(key) or {}
         cur_digest = cur.get("digest") or ""
-        # Prefer digest comparison if provided; else fallback to tag mismatch
+        cur_image_id = cur.get("image_id") or ""
+        
+        # Get latest digest
         lat_digest = latest_digests.get(svc_key) or ""
-        if lat_digest and cur_digest and lat_digest != cur_digest:
-            return True
+        
+        # Compare digests - use Image ID if RepoDigest is empty
+        if lat_digest:
+            # Extract just the hash part for comparison
+            lat_hash = lat_digest.split(":", 1)[1] if ":" in lat_digest else lat_digest
+            
+            # Compare against RepoDigest if available, otherwise Image ID
+            if cur_digest:
+                cur_hash = cur_digest.split(":", 1)[1] if ":" in cur_digest else cur_digest
+                if cur_hash != lat_hash:
+                    return True
+            elif cur_image_id:
+                # Image ID is already just the hash (we stripped sha256: prefix)
+                if cur_image_id != lat_hash:
+                    return True
+        
         if not lat_digest:
             # Fallback compare tags
             lat_ref = latest_services.get(svc_key) or ""
@@ -198,6 +229,23 @@ async def get_version_info(refresh: bool = False) -> VersionInfo:
         manifest = await _fetch_manifest(channel)
         if manifest:
             latest = _resolve_latest_from_manifest(manifest)
+        else:
+            # No manifest - fetch latest digests directly from Docker Hub
+            logger.info("No manifest found, fetching latest digests from Docker Hub...")
+            latest_digests = {}
+            for svc_key, image_ref in [("app", "phyrron/canopyos-app:latest"), 
+                                       ("python_backend", "phyrron/canopyos-backend:latest")]:
+                try:
+                    logger.info(f"Fetching latest digest for {image_ref}...")
+                    digest = await resolve_tag_to_digest(image_ref)
+                    if digest:
+                        latest_digests[svc_key] = digest
+                        logger.info(f"Got latest digest for {svc_key}: {digest}")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch latest digest for {image_ref}: {e}")
+                    pass
+            if latest_digests:
+                latest["digests"] = latest_digests
     except Exception as e:
         last_result = f"manifest_error: {e}"
 
@@ -262,6 +310,7 @@ async def _registry_auth_and_get_digest(registry: str, repository: str, referenc
         "application/vnd.oci.image.manifest.v1+json",
         "application/vnd.docker.distribution.manifest.v2+json",
     ])
+    logger.debug(f"Fetching digest from {base}{path}")
     timeout = httpx.Timeout(10.0, connect=5.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.get(base + path, headers={"Accept": accept})
@@ -293,7 +342,12 @@ async def _registry_auth_and_get_digest(registry: str, repository: str, referenc
         if resp.status_code >= 200 and resp.status_code < 300:
             dcd = resp.headers.get("Docker-Content-Digest") or resp.headers.get("docker-content-digest")
             if dcd:
+                logger.debug(f"Got digest for {repository}:{reference} = {dcd}")
                 return dcd
+            else:
+                logger.warning(f"No docker-content-digest header for {repository}:{reference}")
+        else:
+            logger.warning(f"Failed to fetch manifest: {resp.status_code}")
     return None
 
 

@@ -71,6 +71,10 @@ services:
 
   python_backend:
     image: phyrron/canopyos-backend:latest
+    build:
+      context: ../canopyos-services
+      dockerfile: Dockerfile.backend
+    pull_policy: if_not_present
     container_name: backend
     volumes:
       - python-backend-config:/home/canopyos/config
@@ -185,6 +189,7 @@ services:
       - ./promtail/promtail-config.yaml:/etc/promtail/config.yaml:ro
       - zigbee2mqtt_data:/zigbee2mqtt_logs:ro
       - promtail-positions:/tmp/promtail
+      - update_logs:/update_logs:ro
     command: -config.file=/etc/promtail/config.yaml
     depends_on:
       - loki
@@ -216,6 +221,29 @@ services:
     volumes:
       - log_volume:/var/log/app_logs
       - /etc/localtime:/etc/localtime:ro
+
+  updater:
+    build:
+      context: ./updater
+      dockerfile: Dockerfile
+    container_name: updater
+    environment:
+      - DOCKER_HOST=tcp://docker-proxy:2375
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace:ro
+      - backups:/backups
+      - update_logs:/update_logs
+    depends_on:
+      docker-proxy:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    networks:
+      - grow-net
+    restart: unless-stopped
 
 secrets:
   influxdb-admin-username:
@@ -258,6 +286,8 @@ volumes:
   loki-data:
   promtail-positions: {}
   zigbee2mqtt_data:
+  backups:
+  update_logs:
 
 networks:
   grow-net:

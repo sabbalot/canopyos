@@ -11,14 +11,15 @@ secrets/
 password*
 *password*
 *token*
-
+__pycache__/
+.venv/
 # Exclude actual secret files but not scripts that generate them
 .secrets/
 secrets/
 *.secret
 !generate_secrets.sh
 !*secrets.sh
-
+/documentation/
 # Docker and runtime files
 .dockerignore
 docker-compose.override.yml

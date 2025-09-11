@@ -302,11 +302,17 @@ class UpdaterOrchestrator:
         logger.info(f"HOST_PWD env var: {os.environ.get('HOST_PWD', 'NOT SET')}")
         
         # We need to tell docker compose where to find files on the host
-        # Use --project-directory to set the working directory for compose
-        base_cmd = [docker_bin, "compose", "--project-directory", host_workdir, "-p", project_name]
+        # Different approach: use absolute paths for compose files instead of project-directory
+        # This seems to work better with secrets
+        compose_file_path = os.path.join(host_workdir, "docker-compose.yml")
+        pinned_file_path = os.path.join(host_workdir, "docker-compose.pinned.yml")
+        
+        base_cmd = [docker_bin, "compose", "-p", project_name]
         
         # Set environment for proper path resolution
         env = os.environ.copy()
+        # Set COMPOSE_PROJECT_DIR to help with relative paths in the compose file
+        env["COMPOSE_PROJECT_DIR"] = host_workdir
         
         # Check if pinned override exists and add it to compose files
         if "-f" in args:
@@ -314,11 +320,11 @@ class UpdaterOrchestrator:
             cmd = base_cmd + args
         elif os.path.exists(pinned_path):
             # Auto-include pinned file for all compose operations
-            # Use relative paths since we set project-directory
-            cmd = base_cmd + ["-f", "docker-compose.yml", "-f", "docker-compose.pinned.yml"] + args
+            # Use absolute paths to avoid confusion
+            cmd = base_cmd + ["-f", compose_file_path, "-f", pinned_file_path] + args
         else:
-            # Default case - explicitly specify docker-compose.yml
-            cmd = base_cmd + ["-f", "docker-compose.yml"] + args
+            # Default case - use absolute path
+            cmd = base_cmd + ["-f", compose_file_path] + args
         
         try:
             # Log the command for debugging

@@ -285,6 +285,9 @@ class UpdaterOrchestrator:
 
     async def _compose(self, args: List[str], sess: Optional[UpdateSession] = None) -> bool:
         workdir = os.environ.get("WORKDIR", "/workspace")
+        # Use HOST_PWD if available, otherwise fall back to workdir
+        # This is critical when running compose from within a container
+        host_workdir = os.environ.get("HOST_PWD", workdir)
         project_name = os.environ.get("COMPOSE_PROJECT_NAME", "canopyos")
 
         docker_bin = self._resolve_docker_bin()
@@ -308,7 +311,7 @@ class UpdaterOrchestrator:
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
-                cwd=workdir,
+                cwd=host_workdir,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 env=os.environ.copy(),

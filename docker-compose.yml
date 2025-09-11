@@ -229,6 +229,7 @@ services:
     container_name: updater
     environment:
       - DOCKER_HOST=tcp://docker-proxy:2375
+      - HOST_PWD=${PWD:-/opt/canopyos}  # Pass host's actual path for docker compose
     working_dir: /workspace
     volumes:
       - ./:/workspace:rw  # Read-write for deployment sync

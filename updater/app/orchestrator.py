@@ -299,6 +299,7 @@ class UpdaterOrchestrator:
         
         # For debugging: log the paths we're using
         logger.info(f"Docker compose paths - workdir: {workdir}, host_workdir: {host_workdir}")
+        logger.info(f"HOST_PWD env var: {os.environ.get('HOST_PWD', 'NOT SET')}")
         
         # We need to tell docker compose where to find files on the host
         # Use --project-directory to set the working directory for compose
@@ -316,8 +317,8 @@ class UpdaterOrchestrator:
             # Use relative paths since we set project-directory
             cmd = base_cmd + ["-f", "docker-compose.yml", "-f", "docker-compose.pinned.yml"] + args
         else:
-            # Default case - compose will look for docker-compose.yml in project directory
-            cmd = base_cmd + args
+            # Default case - explicitly specify docker-compose.yml
+            cmd = base_cmd + ["-f", "docker-compose.yml"] + args
         
         try:
             # Log the command for debugging

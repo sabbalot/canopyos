@@ -230,6 +230,7 @@ services:
     environment:
       - DOCKER_HOST=tcp://docker-proxy:2375
       - HOST_PWD=${PWD:-/opt/canopyos}  # Pass host's actual path for docker compose
+      - UPDATE_SINGLE_SERVICE_MODE=${UPDATE_SINGLE_SERVICE_MODE:-false}  # Enable for Raspberry Pi
     working_dir: /workspace
     volumes:
       - ./:/workspace:rw  # Read-write for deployment sync

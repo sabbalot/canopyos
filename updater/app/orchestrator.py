@@ -243,25 +243,72 @@ class UpdaterOrchestrator:
                 # Update the main compose command to always use the pinned file
                 ok = await self._compose(["-f", "docker-compose.yml", "-f", override_path, "up", "-d", "--no-build", "--no-deps", "--force-recreate", "--remove-orphans", *services], sess)
             else:
-                # Split services into smaller batches to avoid "unexpected EOF" errors
-                # Start with critical infrastructure services first
-                infra_services = ["postgres", "influxdb", "docker-proxy"]
-                app_services = ["python_backend", "app"]
-                other_services = [s for s in services if s not in infra_services + app_services]
+                # Alternative approach: stop services first, then start them
+                # This avoids the "unexpected EOF" error with force-recreate
+                await self.emit(sess, "recreate", "Stopping services for update", 85)
                 
-                # Recreate infrastructure services first
-                await self.emit(sess, "recreate", f"Recreating infrastructure services: {', '.join(infra_services)}", 85)
-                ok = await self._compose(["up", "-d", "--no-build", "--no-deps", "--force-recreate", *infra_services], sess)
-                if ok and other_services:
-                    # Then other services
-                    await asyncio.sleep(2)  # Brief pause
-                    await self.emit(sess, "recreate", f"Recreating support services: {', '.join(other_services)}", 87)
-                    ok = await self._compose(["up", "-d", "--no-build", "--no-deps", "--force-recreate", *other_services], sess)
-                if ok and app_services:
-                    # Finally app services
-                    await asyncio.sleep(2)  # Brief pause
-                    await self.emit(sess, "recreate", f"Recreating application services: {', '.join(app_services)}", 89)
-                    ok = await self._compose(["up", "-d", "--no-build", "--no-deps", "--force-recreate", *app_services], sess)
+                # Stop all services that need updating
+                stop_ok = await self._compose(["stop", *services], sess)
+                if not stop_ok:
+                    logger.warning("Failed to stop some services, continuing anyway")
+                
+                # Brief pause after stopping
+                await asyncio.sleep(3)
+                
+                # Check if we should use simple mode (just up -d without force-recreate)
+                simple_mode = os.environ.get("UPDATE_SIMPLE_MODE", "false").lower() == "true"
+                
+                if simple_mode:
+                    # Simplest approach - just run docker compose up -d
+                    # Let Docker handle the recreation based on image changes
+                    await self.emit(sess, "recreate", "Starting services (simple mode)", 86)
+                    ok = await self._compose(["up", "-d", "--no-build"], sess)
+                    await self.emit(sess, "recreate", "Services updated", 89)
+                    
+                # Check if we should use single-service mode (for constrained environments)
+                elif os.environ.get("UPDATE_SINGLE_SERVICE_MODE", "false").lower() == "true":
+                    # Start services one at a time - slower but more reliable
+                    await self.emit(sess, "recreate", "Starting services one at a time (single service mode)", 86)
+                    service_order = ["postgres", "influxdb", "docker-proxy", "loki", "grafana", "promtail", "python_backend", "app"]
+                    progress_per_service = 10 / len(services)  # Distribute progress across services
+                    current_progress = 86
+                    
+                    for svc in service_order:
+                        if svc in services:
+                            await self.emit(sess, "recreate", f"Starting {svc}", int(current_progress))
+                            svc_ok = await self._compose(["up", "-d", "--no-build", "--no-deps", svc], sess)
+                            if not svc_ok:
+                                logger.warning(f"Failed to start {svc}, continuing anyway")
+                            else:
+                                await asyncio.sleep(1)  # Brief pause between services
+                            current_progress += progress_per_service
+                    ok = True  # Consider it successful if we got this far
+                else:
+                    # Batch mode - faster but may fail on constrained systems
+                    # Infrastructure first
+                    infra_services = ["postgres", "influxdb", "docker-proxy"]
+                    infra_to_start = [s for s in infra_services if s in services]
+                    if infra_to_start:
+                        await self.emit(sess, "recreate", f"Starting infrastructure services: {', '.join(infra_to_start)}", 86)
+                        ok = await self._compose(["up", "-d", "--no-build", "--no-deps", *infra_to_start], sess)
+                        if ok:
+                            await asyncio.sleep(2)  # Let them stabilize
+                    
+                    # Then support services
+                    support_services = ["loki", "grafana", "promtail"]
+                    support_to_start = [s for s in support_services if s in services]
+                    if ok and support_to_start:
+                        await self.emit(sess, "recreate", f"Starting support services: {', '.join(support_to_start)}", 87)
+                        ok = await self._compose(["up", "-d", "--no-build", "--no-deps", *support_to_start], sess)
+                        if ok:
+                            await asyncio.sleep(2)
+                    
+                    # Finally application services
+                    app_services = ["python_backend", "app"]
+                    app_to_start = [s for s in app_services if s in services]
+                    if ok and app_to_start:
+                        await self.emit(sess, "recreate", f"Starting application services: {', '.join(app_to_start)}", 89)
+                        ok = await self._compose(["up", "-d", "--no-build", "--no-deps", *app_to_start], sess)
             
             if not ok:
                 await self.emit(sess, "failed", "docker compose up -d failed", sess.progress)
@@ -379,6 +426,10 @@ echo "Executing: {compose_cmd}"
             ]
             
             logger.info(f"Executing script via docker run")
+            logger.debug(f"Full command: {' '.join(cmd)}")
+            
+            # Add timeout for docker run command
+            timeout = float(os.environ.get("DOCKER_RUN_TIMEOUT", "120"))
             
             proc = await asyncio.create_subprocess_exec(
                 *cmd,

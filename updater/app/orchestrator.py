@@ -217,7 +217,10 @@ class UpdaterOrchestrator:
             if sess.cancel_requested:
                 return
             await self.emit(sess, "migrate", "docker compose run --rm migrations alembic upgrade head", 60)
-            ok = await self._compose(["run", "--rm", "migrations", "alembic", "upgrade", "head"], sess)
+            # For migrations, we need special handling due to Docker Compose secret naming issues
+            # When using -p flag with 'run' command, it looks for prefixed secret files
+            # So we'll run this command without the project name flag
+            ok = await self._compose_without_project(["run", "--rm", "migrations", "alembic", "upgrade", "head"], sess)
             if not ok:
                 await self.emit(sess, "failed", "Migrations failed", sess.progress)
                 await sess.queue.put(UpdateEvent(event="failed", state="failed", message="migrations failed", ts=datetime.now(UTC)))
@@ -380,6 +383,74 @@ class UpdaterOrchestrator:
             if os.path.exists(candidate):
                 return candidate
         return None
+
+    async def _compose_without_project(self, args: List[str], sess: Optional[UpdateSession] = None) -> bool:
+        """
+        Special compose method without project name flag.
+        Used for migrations to avoid secret naming issues.
+        """
+        workdir = os.environ.get("WORKDIR", "/workspace")
+        host_workdir = os.environ.get("HOST_PWD", "/opt/canopyos")
+        
+        docker_bin = self._resolve_docker_bin()
+        if not docker_bin:
+            if sess:
+                await self.emit(sess, "failed", "Docker CLI not found in container PATH", 40)
+            return False
+        
+        # Use absolute path for compose file but no project name
+        compose_file_path = os.path.join(host_workdir, "docker-compose.yml")
+        base_cmd = [docker_bin, "compose", "-f", compose_file_path]
+        cmd = base_cmd + args
+        
+        # Set environment for proper path resolution
+        env = os.environ.copy()
+        env["COMPOSE_PROJECT_DIR"] = host_workdir
+        
+        try:
+            logger.info(f"Running docker compose command (no project): {' '.join(cmd)}")
+            
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=workdir,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                env=env,
+            )
+            
+            # Stream output into session logs
+            assert proc.stdout is not None
+            async def read_stream() -> None:
+                while True:
+                    line = await proc.stdout.readline()
+                    if not line:
+                        break
+                    text = line.decode(errors="replace").rstrip()
+                    if sess:
+                        sess.log_lines.append(text)
+                        await self._write_log(sess, text)
+                        # Forward migration output to SSE
+                        if text and not text.startswith("time="):  # Skip docker timestamp warnings
+                            await sess.queue.put(UpdateEvent(event="log", state=sess.state, message=text, ts=datetime.now(UTC)))
+
+            try:
+                await asyncio.wait_for(read_stream(), timeout=float(os.environ.get("COMPOSE_TIMEOUT_SECONDS", "600")))
+            except asyncio.TimeoutError:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                if sess:
+                    await self.emit(sess, "failed", f"Timeout running: {' '.join(cmd)}", sess.progress)
+                return False
+            finally:
+                await proc.wait()
+
+            return proc.returncode == 0
+        except Exception as e:
+            if sess:
+                await self.emit(sess, "failed", f"Compose error: {e}", sess.progress)
+            return False
 
     async def _sync_deployment_repo(self, sess: UpdateSession) -> bool:
         """Download and extract latest deployment files from GitHub"""

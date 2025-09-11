@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import shutil
 from dataclasses import dataclass, field
@@ -15,6 +16,8 @@ from .schemas import (
     UpdateStatusResponse,
 )
 from .version import get_current_versions, get_target_for_services
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -357,8 +360,29 @@ class UpdaterOrchestrator:
         """Download and extract latest deployment files from GitHub"""
         workdir = os.environ.get("WORKDIR", "/workspace")
         repo_url = os.environ.get("DEPLOYMENT_REPO_URL", "https://github.com/sabbalot/canopyos/archive/refs/heads/main.tar.gz")
+        backup_dir = f"/tmp/workspace-backup-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
         
         try:
+            # Create backup of current workspace (excluding runtime data)
+            await self.emit(sess, "sync", "Creating workspace backup", 25)
+            backup_cmd = [
+                "tar", "-czf", f"{backup_dir}.tar.gz",
+                "--exclude=.secrets",
+                "--exclude=volumes",
+                "--exclude=node-red",
+                "--exclude=.git",
+                "--exclude=*.log",
+                "-C", "/", "workspace"
+            ]
+            proc = await asyncio.create_subprocess_exec(
+                *backup_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT
+            )
+            await proc.wait()
+            if proc.returncode != 0:
+                logger.warning("Failed to create complete backup, continuing anyway")
+            
             # Download repository tarball
             temp_file = "/tmp/canopyos-latest.tar.gz"
             await self.emit(sess, "sync", "Downloading repository archive", 26)
@@ -386,6 +410,12 @@ class UpdaterOrchestrator:
             returncode = await read_curl_output()
             if returncode != 0:
                 await self.emit(sess, "failed", "Failed to download repository", sess.progress)
+                # Clean up backup since we didn't even start extraction
+                try:
+                    if os.path.exists(f"{backup_dir}.tar.gz"):
+                        os.remove(f"{backup_dir}.tar.gz")
+                except Exception:
+                    pass
                 return False
             
             await self.emit(sess, "sync", "Extracting deployment files", 28)
@@ -435,13 +465,60 @@ class UpdaterOrchestrator:
             
             if returncode != 0:
                 await self.emit(sess, "failed", "Failed to extract repository files", sess.progress)
-                return False
+                raise Exception("Extraction failed")  # Trigger restore
             
             await self.emit(sess, "sync", "Deployment files updated successfully", 30)
+            
+            # Clean up backup on success
+            try:
+                if os.path.exists(f"{backup_dir}.tar.gz"):
+                    os.remove(f"{backup_dir}.tar.gz")
+                    logger.debug(f"Removed backup: {backup_dir}.tar.gz")
+            except Exception as e:
+                logger.warning(f"Failed to remove backup: {e}")
+            
             return True
             
         except Exception as e:
             await self.emit(sess, "failed", f"Repository sync error: {e}", sess.progress)
+            
+            # Attempt to restore from backup on failure
+            if os.path.exists(f"{backup_dir}.tar.gz"):
+                await self.emit(sess, "sync", "Restoring from backup after failure", sess.progress)
+                try:
+                    # First clear the workspace directory (except runtime data)
+                    clear_cmd = [
+                        "find", workdir,
+                        "-mindepth", "1",
+                        "-not", "-path", f"{workdir}/.secrets*",
+                        "-not", "-path", f"{workdir}/volumes*",
+                        "-not", "-path", f"{workdir}/node-red*",
+                        "-not", "-path", f"{workdir}/.git*",
+                        "-delete"
+                    ]
+                    await asyncio.create_subprocess_exec(*clear_cmd)
+                    
+                    # Then restore from backup
+                    restore_cmd = ["tar", "-xzf", f"{backup_dir}.tar.gz", "-C", "/"]
+                    proc = await asyncio.create_subprocess_exec(
+                        *restore_cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT
+                    )
+                    await proc.wait()
+                    if proc.returncode == 0:
+                        await self.emit(sess, "sync", "Restored workspace from backup", sess.progress)
+                    else:
+                        await self.emit(sess, "failed", "Failed to restore from backup", sess.progress)
+                except Exception as restore_error:
+                    logger.error(f"Restore failed: {restore_error}")
+                finally:
+                    # Clean up backup file
+                    try:
+                        os.remove(f"{backup_dir}.tar.gz")
+                    except Exception:
+                        pass
+            
             return False
 
     def _get_update_services(self) -> List[str]:

@@ -231,7 +231,7 @@ services:
       - DOCKER_HOST=tcp://docker-proxy:2375
     working_dir: /workspace
     volumes:
-      - ./:/workspace:ro
+      - ./:/workspace:rw  # Read-write for deployment sync
       - backups:/backups
       - update_logs:/update_logs
     depends_on:

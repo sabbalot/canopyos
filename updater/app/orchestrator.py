@@ -290,6 +290,22 @@ class UpdaterOrchestrator:
         workdir = os.environ.get("WORKDIR", "/workspace")
         host_workdir = os.environ.get("HOST_PWD", "/opt/canopyos")
         project_name = os.environ.get("COMPOSE_PROJECT_NAME", "canopyos")
+        
+        # Debug: Check if HOST_PWD was actually set
+        if os.environ.get("HOST_PWD") is None:
+            logger.warning("HOST_PWD not set in environment, attempting auto-detection...")
+            detected_path = await self._detect_host_path()
+            if detected_path:
+                logger.info(f"Auto-detected host path: {detected_path}")
+                host_workdir = detected_path
+                if sess:
+                    sess.log_lines.append(f"Auto-detected host path: {detected_path}")
+                    await self._write_log(sess, f"Auto-detected host path: {detected_path}")
+            else:
+                logger.warning("Could not auto-detect host path, using default /opt/canopyos")
+                if sess:
+                    sess.log_lines.append("WARNING: Could not detect host path, assuming /opt/canopyos")
+                    await self._write_log(sess, "WARNING: Could not detect host path, assuming /opt/canopyos")
 
         docker_bin = self._resolve_docker_bin()
         if not docker_bin:
@@ -305,29 +321,28 @@ class UpdaterOrchestrator:
         logger.info(f"HOST_PWD env var: {os.environ.get('HOST_PWD', 'NOT SET')}")
         
         # We need to tell docker compose where to find files on the host
-        # Different approach: use absolute paths for compose files instead of project-directory
-        # This seems to work better with secrets
-        compose_file_path = os.path.join(host_workdir, "docker-compose.yml")
-        pinned_file_path = os.path.join(host_workdir, "docker-compose.pinned.yml")
-        
+        # Use environment variables to help Docker Compose find files
         base_cmd = [docker_bin, "compose", "-p", project_name]
         
         # Set environment for proper path resolution
         env = os.environ.copy()
-        # Set COMPOSE_PROJECT_DIR to help with relative paths in the compose file
-        env["COMPOSE_PROJECT_DIR"] = host_workdir
         
-        # Check if pinned override exists and add it to compose files
+        # Try a simpler approach: just set the compose file via environment
+        # This avoids path translation issues
+        compose_file = os.path.join(host_workdir, "docker-compose.yml")
+        if os.path.exists(os.path.join(workdir, "docker-compose.pinned.yml")):
+            compose_file = f"{compose_file}:{os.path.join(host_workdir, 'docker-compose.pinned.yml')}"
+        
+        env["COMPOSE_FILE"] = compose_file
+        env["COMPOSE_PROJECT_DIRECTORY"] = host_workdir
+        
+        # Build command without -f flags since we're using COMPOSE_FILE env var
         if "-f" in args:
-            # Custom files specified, use as-is
+            # If custom files specified, don't use our env var
+            del env["COMPOSE_FILE"]
             cmd = base_cmd + args
-        elif os.path.exists(pinned_path):
-            # Auto-include pinned file for all compose operations
-            # Use absolute paths to avoid confusion
-            cmd = base_cmd + ["-f", compose_file_path, "-f", pinned_file_path] + args
         else:
-            # Default case - use absolute path
-            cmd = base_cmd + ["-f", compose_file_path] + args
+            cmd = base_cmd + args
         
         try:
             # Log the command for debugging
@@ -336,7 +351,8 @@ class UpdaterOrchestrator:
             
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
-                cwd=workdir,  # Run from container's workspace
+                # Don't set cwd - let docker compose run from wherever the subprocess starts
+                # The absolute paths in the command will tell Docker where to find files
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 env=env,

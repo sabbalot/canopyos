@@ -243,7 +243,26 @@ class UpdaterOrchestrator:
                 # Update the main compose command to always use the pinned file
                 ok = await self._compose(["-f", "docker-compose.yml", "-f", override_path, "up", "-d", "--no-build", "--no-deps", "--force-recreate", "--remove-orphans", *services], sess)
             else:
-                ok = await self._compose(["up", "-d", "--no-build", "--no-deps", "--force-recreate", "--remove-orphans", *services], sess)
+                # Split services into smaller batches to avoid "unexpected EOF" errors
+                # Start with critical infrastructure services first
+                infra_services = ["postgres", "influxdb", "docker-proxy"]
+                app_services = ["python_backend", "app"]
+                other_services = [s for s in services if s not in infra_services + app_services]
+                
+                # Recreate infrastructure services first
+                await self.emit(sess, "recreate", f"Recreating infrastructure services: {', '.join(infra_services)}", 85)
+                ok = await self._compose(["up", "-d", "--no-build", "--no-deps", "--force-recreate", *infra_services], sess)
+                if ok and other_services:
+                    # Then other services
+                    await asyncio.sleep(2)  # Brief pause
+                    await self.emit(sess, "recreate", f"Recreating support services: {', '.join(other_services)}", 87)
+                    ok = await self._compose(["up", "-d", "--no-build", "--no-deps", "--force-recreate", *other_services], sess)
+                if ok and app_services:
+                    # Finally app services
+                    await asyncio.sleep(2)  # Brief pause
+                    await self.emit(sess, "recreate", f"Recreating application services: {', '.join(app_services)}", 89)
+                    ok = await self._compose(["up", "-d", "--no-build", "--no-deps", "--force-recreate", *app_services], sess)
+            
             if not ok:
                 await self.emit(sess, "failed", "docker compose up -d failed", sess.progress)
                 await sess.queue.put(UpdateEvent(event="failed", state="failed", message="compose up failed", ts=datetime.now(UTC)))
@@ -354,6 +373,7 @@ echo "Executing: {compose_cmd}"
                 "-v", "/var/run/docker.sock:/var/run/docker.sock",
                 "-v", "/opt/canopyos:/opt/canopyos",
                 "-w", "/opt/canopyos",
+                "--name", f"updater-exec-{script_name.replace('.sh', '')}",
                 "docker:cli",
                 "sh", f"/opt/canopyos/{script_name}"
             ]
@@ -597,8 +617,8 @@ echo "Executing: {compose_cmd}"
             return False
 
     def _get_update_services(self) -> List[str]:
-        # By default, update all services except the updater itself
-        exclude = set((os.environ.get("UPDATE_EXCLUDE", "updater").split(",")))
+        # By default, update all services except the updater itself and one-shot containers
+        exclude = set((os.environ.get("UPDATE_EXCLUDE", "updater,migrations").split(",")))
         exclude = set(s.strip() for s in exclude if s.strip())
         # Allow explicit include list
         include_env = os.environ.get("UPDATE_INCLUDE", "")
@@ -614,7 +634,7 @@ echo "Executing: {compose_cmd}"
             "grafana",
             "loki",
             "promtail",
-            "migrations",
+            # Don't include migrations - it's a one-shot container
         ]
         return [s for s in default_services if s not in exclude]
 

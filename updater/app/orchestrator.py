@@ -375,25 +375,43 @@ class UpdaterOrchestrator:
         # Migrations need to run without -p flag to avoid secret naming issues
         is_migration = "run" in args and "migrations" in args
         
+        # Check which docker compose command to use
+        # Some systems have 'docker-compose' instead of 'docker compose'
+        compose_base = "docker compose"
+        
         if is_migration:
             # No project name for migrations
             if pinned_exists and "-f" not in args:
-                compose_cmd = f"docker compose -f docker-compose.yml -f docker-compose.pinned.yml {compose_args}"
+                compose_cmd = f"{compose_base} -f docker-compose.yml -f docker-compose.pinned.yml {compose_args}"
             else:
-                compose_cmd = f"docker compose {compose_args}"
+                compose_cmd = f"{compose_base} {compose_args}"
         else:
             # Normal commands use project name
             if pinned_exists and "-f" not in args:
-                compose_cmd = f"docker compose -p {project_name} -f docker-compose.yml -f docker-compose.pinned.yml {compose_args}"
+                compose_cmd = f"{compose_base} -p {project_name} -f docker-compose.yml -f docker-compose.pinned.yml {compose_args}"
             else:
-                compose_cmd = f"docker compose -p {project_name} {compose_args}"
+                compose_cmd = f"{compose_base} -p {project_name} {compose_args}"
         
         script_content = f"""#!/bin/bash
 set -e
+
+echo "=== Script execution started ==="
+echo "Current directory: $(pwd)"
 cd /opt/canopyos || exit 1
-echo "Running from: $(pwd)"
+echo "Changed to: $(pwd)"
+echo "Files in directory:"
+ls -la docker-compose.yml || echo "docker-compose.yml not found!"
+echo "Docker version:"
+docker version --format "Client: {{{{.Client.Version}}}}" || echo "Docker not available"
+echo "Docker Compose version:"
+docker compose version || echo "Docker Compose not available"
 echo "Executing: {compose_cmd}"
-{compose_cmd}
+echo "=== Running command ==="
+{compose_cmd} 2>&1
+EXIT_CODE=$?
+echo "=== Command completed ==="
+echo "Command exit code: $EXIT_CODE"
+exit $EXIT_CODE
 """
         
         try:
@@ -415,13 +433,15 @@ echo "Executing: {compose_cmd}"
                     await self.emit(sess, "failed", "Docker CLI not found", sess.progress)
                 return False
             
+            # Use an image that has docker compose v2 installed
+            # docker:latest includes compose plugin
             cmd = [
                 docker_bin, "run", "--rm",
                 "-v", "/var/run/docker.sock:/var/run/docker.sock",
                 "-v", "/opt/canopyos:/opt/canopyos",
                 "-w", "/opt/canopyos",
                 "--name", f"updater-exec-{script_name.replace('.sh', '')}",
-                "docker:cli",
+                "docker:latest",
                 "sh", f"/opt/canopyos/{script_name}"
             ]
             
@@ -448,9 +468,8 @@ echo "Executing: {compose_cmd}"
                     if sess:
                         sess.log_lines.append(text)
                         await self._write_log(sess, text)
-                        # Forward relevant lines to SSE
-                        if any(k in text for k in ("Pulling", "Pulled", "Downloading", "Extracting", 
-                                                   "Complete", "complete", "already", "Running", "Creating")):
+                        # Forward all non-empty lines to SSE for better debugging
+                        if text.strip():
                             await sess.queue.put(UpdateEvent(event="log", state=sess.state, message=text, ts=datetime.now(UTC)))
             
             try:
@@ -465,11 +484,20 @@ echo "Executing: {compose_cmd}"
                 return False
             finally:
                 await proc.wait()
+                returncode = proc.returncode
                 # Clean up the script
                 try:
                     os.remove(script_path)
                 except Exception:
                     pass
+                
+                # Log the return code for debugging
+                if returncode != 0:
+                    logger.error(f"Script execution failed with exit code: {returncode}")
+                    logger.error(f"Failed command: {compose_cmd}")
+                    if sess:
+                        sess.log_lines.append(f"ERROR: Command failed with exit code {returncode}")
+                        await self._write_log(sess, f"ERROR: Command failed with exit code {returncode}")
             
             return proc.returncode == 0
             

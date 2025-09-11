@@ -287,77 +287,86 @@ class UpdaterOrchestrator:
             await self._sf.release(update_id)
 
     async def _compose(self, args: List[str], sess: Optional[UpdateSession] = None) -> bool:
+        """
+        Execute docker compose by creating a shell script and running it via docker.
+        This avoids all path translation issues.
+        """
         workdir = os.environ.get("WORKDIR", "/workspace")
-        host_workdir = os.environ.get("HOST_PWD", "/opt/canopyos")
         project_name = os.environ.get("COMPOSE_PROJECT_NAME", "canopyos")
         
-        # Debug: Check if HOST_PWD was actually set
-        if os.environ.get("HOST_PWD") is None:
-            logger.warning("HOST_PWD not set in environment, attempting auto-detection...")
-            detected_path = await self._detect_host_path()
-            if detected_path:
-                logger.info(f"Auto-detected host path: {detected_path}")
-                host_workdir = detected_path
-                if sess:
-                    sess.log_lines.append(f"Auto-detected host path: {detected_path}")
-                    await self._write_log(sess, f"Auto-detected host path: {detected_path}")
+        # Create a temporary shell script that will run on the host
+        script_name = f"updater_compose_{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}.sh"
+        script_path = os.path.join(workdir, script_name)
+        
+        # Build the compose command that will run on the host
+        # The script will cd to the CanopyOS directory and run docker compose
+        compose_args = " ".join(args)
+        
+        # Check if we need to include pinned file
+        pinned_exists = os.path.exists(os.path.join(workdir, "docker-compose.pinned.yml"))
+        
+        # Check if this is a migration command (called from _compose_without_project)
+        # Migrations need to run without -p flag to avoid secret naming issues
+        is_migration = "run" in args and "migrations" in args
+        
+        if is_migration:
+            # No project name for migrations
+            if pinned_exists and "-f" not in args:
+                compose_cmd = f"docker compose -f docker-compose.yml -f docker-compose.pinned.yml {compose_args}"
             else:
-                logger.warning("Could not auto-detect host path, using default /opt/canopyos")
-                if sess:
-                    sess.log_lines.append("WARNING: Could not detect host path, assuming /opt/canopyos")
-                    await self._write_log(sess, "WARNING: Could not detect host path, assuming /opt/canopyos")
-
-        docker_bin = self._resolve_docker_bin()
-        if not docker_bin:
-            if sess:
-                await self.emit(sess, "failed", "Docker CLI not found in container PATH", 40)
-            return False
-
-        # Check if pinned override exists and add it to compose files
-        pinned_path = os.path.join(workdir, "docker-compose.pinned.yml")
-        
-        # For debugging: log the paths we're using
-        logger.info(f"Docker compose paths - workdir: {workdir}, host_workdir: {host_workdir}")
-        logger.info(f"HOST_PWD env var: {os.environ.get('HOST_PWD', 'NOT SET')}")
-        
-        # We need to tell docker compose where to find files on the host
-        # Use environment variables to help Docker Compose find files
-        base_cmd = [docker_bin, "compose", "-p", project_name]
-        
-        # Set environment for proper path resolution
-        env = os.environ.copy()
-        
-        # Try a simpler approach: just set the compose file via environment
-        # This avoids path translation issues
-        compose_file = os.path.join(host_workdir, "docker-compose.yml")
-        if os.path.exists(os.path.join(workdir, "docker-compose.pinned.yml")):
-            compose_file = f"{compose_file}:{os.path.join(host_workdir, 'docker-compose.pinned.yml')}"
-        
-        env["COMPOSE_FILE"] = compose_file
-        env["COMPOSE_PROJECT_DIRECTORY"] = host_workdir
-        
-        # Build command without -f flags since we're using COMPOSE_FILE env var
-        if "-f" in args:
-            # If custom files specified, don't use our env var
-            del env["COMPOSE_FILE"]
-            cmd = base_cmd + args
+                compose_cmd = f"docker compose {compose_args}"
         else:
-            cmd = base_cmd + args
+            # Normal commands use project name
+            if pinned_exists and "-f" not in args:
+                compose_cmd = f"docker compose -p {project_name} -f docker-compose.yml -f docker-compose.pinned.yml {compose_args}"
+            else:
+                compose_cmd = f"docker compose -p {project_name} {compose_args}"
+        
+        script_content = f"""#!/bin/bash
+set -e
+cd /opt/canopyos || exit 1
+echo "Running from: $(pwd)"
+echo "Executing: {compose_cmd}"
+{compose_cmd}
+"""
         
         try:
-            # Log the command for debugging
-            logger.info(f"Running docker compose command: {' '.join(cmd)}")
-            logger.info(f"COMPOSE_FILE env: {env.get('COMPOSE_FILE', 'not set')}")
+            # Write the script
+            with open(script_path, 'w') as f:
+                f.write(script_content)
+            os.chmod(script_path, 0o755)
+            
+            logger.info(f"Created compose script: {script_name}")
+            if sess:
+                sess.log_lines.append(f"Created compose script: {script_name}")
+                await self._write_log(sess, f"Executing: {compose_cmd}")
+            
+            # Execute the script using docker run
+            # This runs a minimal alpine container that just executes our script
+            docker_bin = self._resolve_docker_bin()
+            if not docker_bin:
+                if sess:
+                    await self.emit(sess, "failed", "Docker CLI not found", sess.progress)
+                return False
+            
+            cmd = [
+                docker_bin, "run", "--rm",
+                "-v", "/var/run/docker.sock:/var/run/docker.sock",
+                "-v", "/opt/canopyos:/opt/canopyos",
+                "-w", "/opt/canopyos",
+                "docker:cli",
+                "sh", f"/opt/canopyos/{script_name}"
+            ]
+            
+            logger.info(f"Executing script via docker run")
             
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
-                # Don't set cwd - let docker compose run from wherever the subprocess starts
-                # The absolute paths in the command will tell Docker where to find files
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
-                env=env,
             )
-            # Stream output into session logs
+            
+            # Stream output
             assert proc.stdout is not None
             async def read_stream() -> None:
                 while True:
@@ -368,10 +377,11 @@ class UpdaterOrchestrator:
                     if sess:
                         sess.log_lines.append(text)
                         await self._write_log(sess, text)
-                        # Only forward concise progress lines to SSE to avoid overwhelming clients
-                        if any(k in text for k in ("Pulling", "Pulled", "Downloading", "Extracting", "Complete", "complete", "already")):
+                        # Forward relevant lines to SSE
+                        if any(k in text for k in ("Pulling", "Pulled", "Downloading", "Extracting", 
+                                                   "Complete", "complete", "already", "Running", "Creating")):
                             await sess.queue.put(UpdateEvent(event="log", state=sess.state, message=text, ts=datetime.now(UTC)))
-
+            
             try:
                 await asyncio.wait_for(read_stream(), timeout=float(os.environ.get("COMPOSE_TIMEOUT_SECONDS", "600")))
             except asyncio.TimeoutError:
@@ -380,15 +390,26 @@ class UpdaterOrchestrator:
                 except Exception:
                     pass
                 if sess:
-                    await self.emit(sess, "failed", f"Timeout running: {' '.join(cmd)}", sess.progress)
+                    await self.emit(sess, "failed", f"Timeout executing compose command", sess.progress)
                 return False
             finally:
                 await proc.wait()
-
+                # Clean up the script
+                try:
+                    os.remove(script_path)
+                except Exception:
+                    pass
+            
             return proc.returncode == 0
+            
         except Exception as e:
             if sess:
-                await self.emit(sess, "failed", f"Compose error: {e}", sess.progress)
+                await self.emit(sess, "failed", f"Compose execution error: {e}", sess.progress)
+            # Clean up on error
+            try:
+                os.remove(script_path)
+            except Exception:
+                pass
             return False
 
     def _resolve_docker_bin(self) -> Optional[str]:
@@ -404,69 +425,11 @@ class UpdaterOrchestrator:
         """
         Special compose method without project name flag.
         Used for migrations to avoid secret naming issues.
+        Simply calls _compose with modified args.
         """
-        workdir = os.environ.get("WORKDIR", "/workspace")
-        host_workdir = os.environ.get("HOST_PWD", "/opt/canopyos")
-        
-        docker_bin = self._resolve_docker_bin()
-        if not docker_bin:
-            if sess:
-                await self.emit(sess, "failed", "Docker CLI not found in container PATH", 40)
-            return False
-        
-        # Use absolute path for compose file but no project name
-        compose_file_path = os.path.join(host_workdir, "docker-compose.yml")
-        base_cmd = [docker_bin, "compose", "-f", compose_file_path]
-        cmd = base_cmd + args
-        
-        # Set environment for proper path resolution
-        env = os.environ.copy()
-        env["COMPOSE_PROJECT_DIR"] = host_workdir
-        
-        try:
-            logger.info(f"Running docker compose command (no project): {' '.join(cmd)}")
-            
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=workdir,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                env=env,
-            )
-            
-            # Stream output into session logs
-            assert proc.stdout is not None
-            async def read_stream() -> None:
-                while True:
-                    line = await proc.stdout.readline()
-                    if not line:
-                        break
-                    text = line.decode(errors="replace").rstrip()
-                    if sess:
-                        sess.log_lines.append(text)
-                        await self._write_log(sess, text)
-                        # Forward migration output to SSE
-                        if text and not text.startswith("time="):  # Skip docker timestamp warnings
-                            await sess.queue.put(UpdateEvent(event="log", state=sess.state, message=text, ts=datetime.now(UTC)))
-
-            try:
-                await asyncio.wait_for(read_stream(), timeout=float(os.environ.get("COMPOSE_TIMEOUT_SECONDS", "600")))
-            except asyncio.TimeoutError:
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
-                if sess:
-                    await self.emit(sess, "failed", f"Timeout running: {' '.join(cmd)}", sess.progress)
-                return False
-            finally:
-                await proc.wait()
-
-            return proc.returncode == 0
-        except Exception as e:
-            if sess:
-                await self.emit(sess, "failed", f"Compose error: {e}", sess.progress)
-            return False
+        # Modify args to not use project name
+        # The _compose method will handle the execution via script
+        return await self._compose(args, sess)
 
     async def _sync_deployment_repo(self, sess: UpdateSession) -> bool:
         """Download and extract latest deployment files from GitHub"""

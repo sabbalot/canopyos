@@ -296,47 +296,37 @@ class UpdaterOrchestrator:
 
         # Check if pinned override exists and add it to compose files
         pinned_path = os.path.join(workdir, "docker-compose.pinned.yml")
-        # Translate container paths to host paths for compose files
-        host_compose_file = os.path.join(host_workdir, "docker-compose.yml")
-        host_pinned_path = os.path.join(host_workdir, "docker-compose.pinned.yml")
         
-        base_cmd = [docker_bin, "compose", "-p", project_name]
+        # For debugging: log the paths we're using
+        logger.info(f"Docker compose paths - workdir: {workdir}, host_workdir: {host_workdir}")
+        
+        # We need to tell docker compose where to find files on the host
+        # Use --project-directory to set the working directory for compose
+        base_cmd = [docker_bin, "compose", "--project-directory", host_workdir, "-p", project_name]
         
         # Set environment for proper path resolution
         env = os.environ.copy()
         
-        # If args already contain -f flags, translate container paths to host paths
+        # Check if pinned override exists and add it to compose files
         if "-f" in args:
-            translated_args = []
-            i = 0
-            while i < len(args):
-                if args[i] == "-f" and i + 1 < len(args):
-                    # Translate the file path
-                    file_path = args[i + 1]
-                    if file_path.startswith("/workspace/"):
-                        # Replace /workspace with host path
-                        file_path = file_path.replace("/workspace", host_workdir, 1)
-                    elif not file_path.startswith("/"):
-                        # Relative path - make it absolute from host perspective
-                        file_path = os.path.join(host_workdir, file_path)
-                    translated_args.extend(["-f", file_path])
-                    i += 2
-                else:
-                    translated_args.append(args[i])
-                    i += 1
-            cmd = base_cmd + translated_args
+            # Custom files specified, use as-is
+            cmd = base_cmd + args
         elif os.path.exists(pinned_path):
             # Auto-include pinned file for all compose operations
-            # Use host paths since docker-proxy executes on the host
-            cmd = base_cmd + ["-f", host_compose_file, "-f", host_pinned_path] + args
+            # Use relative paths since we set project-directory
+            cmd = base_cmd + ["-f", "docker-compose.yml", "-f", "docker-compose.pinned.yml"] + args
         else:
-            # Use host path for the main compose file
-            cmd = base_cmd + ["-f", host_compose_file] + args
+            # Default case - compose will look for docker-compose.yml in project directory
+            cmd = base_cmd + args
         
         try:
+            # Log the command for debugging
+            logger.info(f"Running docker compose command: {' '.join(cmd)}")
+            logger.info(f"COMPOSE_FILE env: {env.get('COMPOSE_FILE', 'not set')}")
+            
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
-                cwd=workdir,
+                cwd=workdir,  # Run from container's workspace
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 env=env,

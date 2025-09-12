@@ -67,6 +67,23 @@ class UpdaterOrchestrator:
         self._backup_sessions: Dict[str, UpdateSession] = {}
         self._backup_sf = SingleFlight()
 
+    async def _restart_updater_after_completion(self) -> None:
+        """Best-effort self-refresh: after an update completes and the updater image is rebuilt,
+        restart the updater container so changes take effect on the next interaction.
+        Runs detached and does not emit session events to avoid confusing the final status.
+        """
+        try:
+            delay_s = float(os.environ.get("UPDATER_SELF_RESTART_DELAY_SECONDS", "10"))
+        except Exception:
+            delay_s = 5.0
+        try:
+            await asyncio.sleep(delay_s)
+            # Do not include --force-recreate; let compose replace the container if the image changed
+            await self._compose(["up", "-d", "--no-build", "--no-deps", "updater"], None)
+        except Exception:
+            # Silent best-effort
+            pass
+
     async def cleanup_stale(self) -> None:
         active = self._sf.get_active_id()
         if not active:
@@ -341,9 +358,14 @@ class UpdaterOrchestrator:
                 await self.emit(sess, "warning", "Updater rebuild failed (non-fatal)", 98)
                 sess.log_lines.append("Warning: Failed to rebuild updater - manual rebuild may be needed for next update")
                 await self._write_log(sess, "Warning: Failed to rebuild updater - manual rebuild may be needed for next update")
+            else:
+                # Inform logs that a background restart will occur
+                await self._write_log(sess, "Updater image rebuilt; scheduling background restart of updater container after completion")
 
             await self.emit(sess, "completed", "Update completed", 100)
             await sess.queue.put(UpdateEvent(event="completed", state="completed", message="done", ts=datetime.now(UTC)))
+            # Schedule a background self-restart to pick up the rebuilt image
+            asyncio.create_task(self._restart_updater_after_completion())
         except Exception as e:
             sess = self.get_session(update_id)
             if sess:

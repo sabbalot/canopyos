@@ -1,5 +1,5 @@
 # Use the official Grafana image
-FROM grafana/grafana:12.2.0
+FROM grafana/grafana:12.1
 
 # Ensure the entrypoint script is executable and adjust permissions
 USER root

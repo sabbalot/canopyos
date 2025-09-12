@@ -74,6 +74,22 @@ async def _inspect_container(container: str) -> Dict[str, Any]:
     return {}
 
 
+async def _inspect_image(image: str) -> Dict[str, Any]:
+    docker_bin = _resolve_docker_bin()
+    if not docker_bin or not image:
+        return {}
+    code, out = await _run_cmd([docker_bin, "image", "inspect", image], timeout=5.0)
+    if code != 0:
+        return {}
+    try:
+        arr = json.loads(out)
+        if isinstance(arr, list) and arr:
+            return arr[0]
+    except Exception:
+        pass
+    return {}
+
+
 def _parse_current_from_inspect(obj: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
     # returns (image_ref, tag, digest, image_id)
     try:
@@ -86,12 +102,10 @@ def _parse_current_from_inspect(obj: Dict[str, Any]) -> Tuple[Optional[str], Opt
             # repo@sha256:… → no tag
             tag = None
         digest: Optional[str] = None
-        repo_digests = obj.get("RepoDigests") or []
-        if isinstance(repo_digests, list) and repo_digests:
+        # If container is running an image pinned by digest, Config.Image may already contain repo@digest
+        if isinstance(image_ref, str) and "@" in image_ref:
             try:
-                ref = repo_digests[0]
-                if isinstance(ref, str) and "@" in ref:
-                    digest = ref.split("@", 1)[1]
+                digest = image_ref.split("@", 1)[1]
             except Exception:
                 pass
         
@@ -121,6 +135,35 @@ async def get_current_versions(services: list[str]) -> Dict[str, Dict[str, Any]]
         name = _container_name_for_service(svc)
         info = await _inspect_container(name)
         image_ref, tag, digest, image_id = _parse_current_from_inspect(info)
+        # If digest not present from container inspect, resolve via local image inspect
+        if not digest:
+            # Prefer inspecting by the container's Image field (full sha256:...)
+            image_identifier = info.get("Image") or ""
+            # Fallback to the ref string if available
+            if not image_identifier:
+                image_identifier = image_ref or ""
+            img_info = await _inspect_image(image_identifier)
+            repo_digests = img_info.get("RepoDigests") or []
+            if isinstance(repo_digests, list) and repo_digests:
+                prefer_repo = _repo_from_image_ref(image_ref)
+                chosen: Optional[str] = None
+                # Prefer a digest that matches the repo we ran with
+                if prefer_repo:
+                    for ref in repo_digests:
+                        if isinstance(ref, str) and ref.startswith(prefer_repo + "@"):
+                            chosen = ref
+                            break
+                if not chosen:
+                    # Fallback to the first valid entry
+                    for ref in repo_digests:
+                        if isinstance(ref, str) and "@" in ref:
+                            chosen = ref
+                            break
+                if chosen and "@" in chosen:
+                    try:
+                        digest = chosen.split("@", 1)[1]
+                    except Exception:
+                        pass
         
         # Note: We cannot fetch digest from registry for current version
         # because that would give us the latest digest, not what's running!
@@ -173,20 +216,20 @@ def _compute_update_available(current: Dict[str, Dict[str, Any]], latest: Dict[s
         # Get latest digest
         lat_digest = latest_digests.get(svc_key) or ""
         
-        # Compare digests - use Image ID if RepoDigest is empty
+        # Compare digests when available
         if lat_digest:
             # Extract just the hash part for comparison
             lat_hash = lat_digest.split(":", 1)[1] if ":" in lat_digest else lat_digest
             
-            # Compare against RepoDigest if available, otherwise Image ID
+            # Compare against RepoDigest if available
             if cur_digest:
                 cur_hash = cur_digest.split(":", 1)[1] if ":" in cur_digest else cur_digest
                 if cur_hash != lat_hash:
                     return True
-            elif cur_image_id:
-                # Image ID is already just the hash (we stripped sha256: prefix)
-                if cur_image_id != lat_hash:
-                    return True
+            # If we don't have a current digest, we cannot reliably compare against
+            # a registry digest (image IDs are not comparable to manifest digests).
+            # In that case, do not flag an update here; fall back to tag compare only
+            # when latest digest is unavailable.
         
         if not lat_digest:
             # Fallback compare tags

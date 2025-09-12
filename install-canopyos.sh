@@ -198,6 +198,10 @@ pull_docker_images() {
     print_status "Pulling all images from docker-compose.yml..."
     docker compose pull
     
+    # Ensure locally-built images are rebuilt against latest bases
+    print_status "Building local images (grafana, loki) with --pull..."
+    docker compose build --pull grafana loki
+    
     # Note: Supporting images (PostgreSQL, InfluxDB, etc.) will be pulled automatically by docker compose
     # Note: Grafana and Loki will be built locally from custom Dockerfiles
     

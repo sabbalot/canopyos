@@ -120,6 +120,22 @@ setup_deployment_files() {
         print_success "Secrets backed up to: $BACKUP_DIR"
     fi
     
+    # If running in update mode, ensure workspace ownership so we can overwrite files
+    if [[ "$UPDATE_MODE" == true ]]; then
+        if [[ -d "$INSTALL_DIR" ]]; then
+            OWNER_UID=$(stat -c '%u' "$INSTALL_DIR" 2>/dev/null || echo "")
+            OWNER_GID=$(stat -c '%g' "$INSTALL_DIR" 2>/dev/null || echo "")
+            if [[ -n "$OWNER_UID" && -n "$OWNER_GID" ]]; then
+                print_status "Ensuring write permissions on $INSTALL_DIR (restoring ownership to $CURRENT_USER)..."
+                sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$INSTALL_DIR" || true
+            else
+                # Fallback if stat is unavailable
+                print_status "Ensuring write permissions on $INSTALL_DIR..."
+                sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$INSTALL_DIR" || true
+            fi
+        fi
+    fi
+    
     # Always ensure we have the latest deployment files from GitHub
     print_status "Ensuring latest deployment files from GitHub..."
     

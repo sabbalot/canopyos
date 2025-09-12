@@ -240,6 +240,12 @@ class UpdaterOrchestrator:
                     content_lines.append(f"  python_backend:\n    image: {targets['python_backend']['repo']}@{targets['python_backend']['digest']}")
                 with open(override_path, "w", encoding="utf-8") as f:
                     f.write("\n".join(content_lines) + "\n")
+                # Fix ownership so host user can edit/remove the pinned file
+                try:
+                    st = os.stat(workdir)
+                    await self._chown_recursive(override_path, st.st_uid, st.st_gid, sess)
+                except Exception:
+                    pass
                 # Update the main compose command to always use the pinned file
                 ok = await self._compose(["-f", "docker-compose.yml", "-f", override_path, "up", "-d", "--no-build", "--no-deps", "--force-recreate", "--remove-orphans", *services], sess)
             else:
@@ -449,11 +455,42 @@ class UpdaterOrchestrator:
         # The _compose method will handle the execution via script
         return await self._compose(args, sess)
 
+    async def _chown_recursive(self, path: str, uid: int, gid: int, sess: Optional[UpdateSession] = None) -> None:
+        """
+        Best-effort recursive chown on a path using numeric uid:gid. Intended to fix
+        host ownership on bind-mounted workspace after file extraction/writes.
+        """
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "chown",
+                "-R",
+                f"{uid}:{gid}",
+                path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            out, _ = await proc.communicate()
+            if sess and out:
+                text = out.decode(errors="replace").rstrip()
+                if text:
+                    await self._write_log(sess, text)
+        except Exception:
+            # Non-fatal
+            pass
+
     async def _sync_deployment_repo(self, sess: UpdateSession) -> bool:
         """Download and extract latest deployment files from GitHub"""
         workdir = os.environ.get("WORKDIR", "/opt/canopyos")
         repo_url = os.environ.get("DEPLOYMENT_REPO_URL", "https://github.com/sabbalot/canopyos/archive/refs/heads/main.tar.gz")
         backup_dir = f"/tmp/workspace-backup-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
+        # Record current workspace ownership to restore after extraction
+        owner_uid: Optional[int] = None
+        owner_gid: Optional[int] = None
+        try:
+            st = os.stat(workdir)
+            owner_uid, owner_gid = st.st_uid, st.st_gid
+        except Exception:
+            owner_uid, owner_gid = None, None
         
         try:
             # Create backup of current workspace (excluding runtime data)
@@ -560,6 +597,13 @@ class UpdaterOrchestrator:
                 await self.emit(sess, "failed", "Failed to extract repository files", sess.progress)
                 raise Exception("Extraction failed")  # Trigger restore
             
+            # Restore ownership of the workspace so host user can manage files
+            try:
+                if owner_uid is not None and owner_gid is not None:
+                    await self._chown_recursive(workdir, owner_uid, owner_gid, sess)
+            except Exception:
+                pass
+
             await self.emit(sess, "sync", "Deployment files updated successfully", 30)
             
             # Clean up backup on success
@@ -656,6 +700,12 @@ class UpdaterOrchestrator:
             content_lines.append(f"  python_backend:\n    image: {be_repo}@{be_digest}")
             with open(pinned_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(content_lines) + "\n")
+            # Fix ownership so host user can edit/remove the pinned file
+            try:
+                st = os.stat(workdir)
+                await self._chown_recursive(pinned_path, st.st_uid, st.st_gid, sess)
+            except Exception:
+                pass
             await self.emit(sess, "recreate", "Rollback: recreating services with previous digests", max(85, sess.progress))
             # The _compose method will automatically use the pinned file
             ok = await self._compose(["up", "-d", "--force-recreate"], sess)

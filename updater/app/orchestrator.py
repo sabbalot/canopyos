@@ -197,6 +197,21 @@ class UpdaterOrchestrator:
                 await sess.queue.put(UpdateEvent(event="failed", state="failed", message="compose pull failed", ts=datetime.now(UTC)))
                 return
 
+            # Rebuild locally-built images (grafana, loki) to pick up new base tags
+            try:
+                build_local = os.environ.get("UPDATE_BUILD_LOCAL", "true").lower() == "true"
+            except Exception:
+                build_local = True
+            if build_local:
+                local_build_services = [s for s in ("grafana", "loki") if s in services]
+                if local_build_services:
+                    await self.emit(sess, "pull", f"docker compose build --pull {' '.join(local_build_services)}", 50)
+                    ok = await self._compose(["build", "--pull", *local_build_services], sess)
+                    if not ok:
+                        await self.emit(sess, "failed", "docker compose build for local images failed", sess.progress)
+                        await sess.queue.put(UpdateEvent(event="failed", state="failed", message="compose build failed", ts=datetime.now(UTC)))
+                        return
+
             # Verify pulled digests match expected if targets known
             if targets:
                 curr = await get_current_versions(["app", "python_backend"])

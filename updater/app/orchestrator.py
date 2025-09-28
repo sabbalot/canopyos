@@ -15,7 +15,7 @@ from .schemas import (
     UpdateEvent,
     UpdateStatusResponse,
 )
-from .version import get_current_versions, get_target_for_services
+from .version import get_current_versions, get_target_for_services, invalidate_latest_cache
 
 logger = logging.getLogger(__name__)
 
@@ -363,6 +363,11 @@ class UpdaterOrchestrator:
                 sess.log_lines.append("Warning: Failed to rebuild updater - manual rebuild may be needed for next update")
                 await self._write_log(sess, "Warning: Failed to rebuild updater - manual rebuild may be needed for next update")
 
+            # Invalidate latest cache so /version reflects new state immediately
+            try:
+                invalidate_latest_cache()
+            except Exception:
+                pass
             await self.emit(sess, "completed", "Update completed", 100)
             await sess.queue.put(UpdateEvent(event="completed", state="completed", message="done", ts=datetime.now(UTC)))
         except Exception as e:

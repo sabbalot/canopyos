@@ -242,30 +242,50 @@ def _compute_update_available(current: Dict[str, Dict[str, Any]], latest: Dict[s
 
 
 @dataclass
-class _Cache:
-    payload: Optional[VersionInfo] = None
+class _LatestCache:
+    """Cache only the 'latest' (manifest/digests) to avoid registry pressure.
+    Always recompute 'current' from local docker on each request.
+    """
+
+    latest: Optional[Dict[str, Any]] = None
+    last_result: str = "ok"
     expires_at: Optional[datetime] = None
     min_refresh_at: Optional[datetime] = None
+    channel: Optional[str] = None
 
 
-_cache = _Cache()
+_latest_cache = _LatestCache()
 
 
-async def get_version_info(refresh: bool = False) -> VersionInfo:
+def invalidate_latest_cache() -> None:
+    """Explicitly clear the latest cache (e.g., after successful update)."""
+    _latest_cache.latest = None
+    _latest_cache.last_result = "ok"
+    _latest_cache.expires_at = None
+    _latest_cache.min_refresh_at = None
+    _latest_cache.channel = None
+
+
+async def _get_latest(refresh: bool = False) -> Tuple[Dict[str, Any], str]:
+    """Return latest info with caching. If refresh=True, bypass cache windows."""
     now = datetime.now(UTC)
     ttl_seconds = int(os.environ.get("VERSION_CACHE_TTL_SECONDS", "3600"))
     min_refresh_seconds = int(os.environ.get("VERSION_MIN_REFRESH_SECONDS", "120"))
     channel = os.environ.get("VERSION_CHANNEL_DEFAULT", "stable")
 
-    # Handle cache
-    if _cache.payload and _cache.expires_at and now < _cache.expires_at:
-        if not refresh or (_cache.min_refresh_at and now < _cache.min_refresh_at):
-            return _cache.payload
+    # Use cached latest when valid and not forcing refresh
+    if (
+        not refresh
+        and _latest_cache.latest is not None
+        and _latest_cache.expires_at is not None
+        and now < _latest_cache.expires_at
+        and _latest_cache.channel == channel
+    ):
+        # Respect min refresh window only when not explicitly refreshed
+        if _latest_cache.min_refresh_at is None or now < _latest_cache.min_refresh_at:
+            return _latest_cache.latest, _latest_cache.last_result
 
-    # Determine current
-    current = await get_current_versions(["app", "python_backend"])
-
-    # Determine latest from manifest (optional)
+    # (Re)compute latest
     latest: Dict[str, Any] = {"version": "latest", "services": {}}
     last_result = "ok"
     try:
@@ -275,8 +295,8 @@ async def get_version_info(refresh: bool = False) -> VersionInfo:
         else:
             # No manifest - fetch latest digests directly from Docker Hub
             logger.info("No manifest found, fetching latest digests from Docker Hub...")
-            latest_digests = {}
-            for svc_key, image_ref in [("app", "phyrron/canopyos-app:latest"), 
+            latest_digests: Dict[str, str] = {}
+            for svc_key, image_ref in [("app", "phyrron/canopyos-app:latest"),
                                        ("python_backend", "phyrron/canopyos-backend:latest")]:
                 try:
                     logger.info(f"Fetching latest digest for {image_ref}...")
@@ -286,29 +306,42 @@ async def get_version_info(refresh: bool = False) -> VersionInfo:
                         logger.info(f"Got latest digest for {svc_key}: {digest}")
                 except Exception as e:
                     logger.warning(f"Failed to fetch latest digest for {image_ref}: {e}")
-                    pass
             if latest_digests:
                 latest["digests"] = latest_digests
     except Exception as e:
         last_result = f"manifest_error: {e}"
 
+    # Update cache (even on errors, to avoid hot loops)
+    _latest_cache.latest = latest
+    _latest_cache.last_result = last_result
+    _latest_cache.expires_at = now + timedelta(seconds=ttl_seconds)
+    _latest_cache.min_refresh_at = now + timedelta(seconds=min_refresh_seconds)
+    _latest_cache.channel = channel
+
+    return latest, last_result
+
+
+async def get_version_info(refresh: bool = False) -> VersionInfo:
+    now = datetime.now(UTC)
+    channel = os.environ.get("VERSION_CHANNEL_DEFAULT", "stable")
+
+    # Always recompute current from local docker
+    current = await get_current_versions(["app", "python_backend"])
+
+    # Fetch latest using cache
+    latest, last_result = await _get_latest(refresh=refresh)
+
     update_available = _compute_update_available(current, latest)
 
-    payload = VersionInfo(
+    return VersionInfo(
         current=current,
         latest=latest,
         update_available=update_available,
-        update_in_progress=False,  # Caller (orchestrator) can update this flag separately
+        update_in_progress=False,
         channel=channel,
         last_checked_at=now,
         last_result=last_result,
     )
-
-    # Cache
-    _cache.payload = payload
-    _cache.expires_at = now + timedelta(seconds=ttl_seconds)
-    _cache.min_refresh_at = now + timedelta(seconds=min_refresh_seconds)
-    return payload
 
 
 # ---- Digest resolution and target mapping ----

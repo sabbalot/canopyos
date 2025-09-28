@@ -81,21 +81,8 @@ async def cancel(body: UpdateCancelRequest) -> Response:
 @app.get("/version", response_model=VersionInfo)
 async def version(refresh: bool = Query(False)) -> Response:
     await orchestrator.cleanup_stale()
-    # Simple rate limiting for refresh=true
-    if refresh:
-        # in-memory cooldown timestamp
-        now_ts = int(datetime.now(UTC).timestamp())
-        cooldown = int(os.environ.get("VERSION_MIN_REFRESH_SECONDS", "120"))
-        key = "_last_refresh_ts"
-        last = getattr(version, key, 0)
-        if now_ts - last < cooldown:
-            # ignore forced refresh and return cached
-            payload = await get_version_info(refresh=False)
-        else:
-            setattr(version, key, now_ts)
-            payload = await get_version_info(refresh=True)
-    else:
-        payload = await get_version_info(refresh=False)
+    # Always recompute 'current'; cache only 'latest' inside get_version_info
+    payload = await get_version_info(refresh=refresh)
     # Reflect live in-progress flag from orchestrator
     if orchestrator.is_effectively_active():
         payload.update_in_progress = True
